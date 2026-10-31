@@ -14,8 +14,12 @@ class PortableTests(unittest.TestCase):
             config = home / 'integration.json'
             config.write_text(json.dumps({'output': '作品', 'workflow': '模板.json', 'comfy_url': 'http://localhost:9000/'}), encoding='utf-8')
             c = RuntimeConfig(config, bundle_root=home / 'bundle')
-            self.assertEqual(c.output, home / '作品')
-            self.assertEqual(c.workflow, home / '模板.json')
+            # Windows runners may expose TEMP through an 8.3 alias. Verify the
+            # actual destination, not the spelling of two equivalent paths.
+            self.assertTrue(c.output.parent.samefile(home))
+            self.assertEqual(c.output.name, '作品')
+            self.assertTrue(c.workflow.parent.samefile(home))
+            self.assertEqual(c.workflow.name, '模板.json')
             self.assertEqual(c.comfy_url, 'http://localhost:9000')
 
     def test_external_is_default_and_invalid_config_fails_explicitly(self):
