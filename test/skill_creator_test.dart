@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -87,8 +88,19 @@ void main() {
           '<new-skill>\n$_film\n\n例子:<draft>\n【主体】a fox\n</draft>\n</new-skill>',
         ),
       );
-      vm.send('帮我写一个胶片感的 Skill');
-      await _settle();
+      addTearDown(vm.dispose);
+      final saved = Completer<void>();
+      void onSaved() {
+        if (vm.skills!.skills.isNotEmpty && !saved.isCompleted) {
+          saved.complete();
+        }
+      }
+
+      vm.skills!.addListener(onSaved);
+      addTearDown(() => vm.skills!.removeListener(onSaved));
+      expect(vm.send('帮我写一个胶片感的 Skill'), isNull);
+      // 写盘在回复结束后异步完成；等待完成事件，避免 CI 磁盘稍慢就误报失败。
+      await saved.future.timeout(const Duration(seconds: 10));
 
       final added = vm.skills!.skills.single;
       expect(added.name, 'Film');
