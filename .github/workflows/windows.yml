@@ -18,6 +18,7 @@ jobs:
         with:
           flutter-version: '3.47.2'
           channel: stable
+          cache: true
       - run: python -m pip install -r backend/requirements-lock.txt
       - run: flutter pub get
       - run: dart analyze lib test

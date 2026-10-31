@@ -184,7 +184,7 @@ def compose(job):
     if image.size != (page["width"], page["height"]):
         raise ValueError("生成图片尺寸与已保存的分镜不符。")
     d = ImageDraw.Draw(image)
-    font_path = next((p for p in [Path(r"C:\Windows\Fonts\simhei.ttf"), Path(r"C:\Windows\Fonts\msyh.ttc")] if p.is_file()), None)
+    font_path = next((p for p in [CONFIG.bundle / "font/LXGW975YuanSC-500W.ttf", Path(r"C:\Windows\Fonts\simhei.ttf"), Path(r"C:\Windows\Fonts\msyh.ttc")] if p.is_file()), None)
     if page["dialogues"] and font_path is None:
         raise RuntimeError("没有找到中文字体，原始图片已保留。")
     # 延续 page3_compose.py 的椭圆/云朵/锯齿和自适应竖排，改成局部画布，避免跨框溢出。

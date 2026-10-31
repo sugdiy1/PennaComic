@@ -13,6 +13,7 @@ def check():
     for name in ('PIL', 'psutil'):
         add(name, importlib.util.find_spec(name) is not None, f'Python依赖 {name}')
     add('workflow', CONFIG.workflow.is_file(), str(CONFIG.workflow))
+    add('chinese_font', (CONFIG.bundle / 'font/LXGW975YuanSC-500W.ttf').is_file(), '随包中文排字字体')
     try:
         graph = json.loads(CONFIG.workflow.read_text(encoding='utf-8-sig'))
         import penna_relay

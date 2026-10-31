@@ -18,6 +18,23 @@ def snapshot():
 
 
 class RelayTests(unittest.TestCase):
+    def test_program_bubbles_use_bundled_chinese_font_on_non_chinese_windows(self):
+        bundled = Path(penna_relay.__file__).resolve().parent.parent / 'font/LXGW975YuanSC-500W.ttf'
+        with tempfile.TemporaryDirectory() as folder:
+            job = penna_relay.prepare(snapshot(), Path(folder))
+            Image.new('RGB', (832, 1216), 'gray').save(job / 'raw.png')
+            actual_loader = penna_relay.ImageFont.truetype
+            used = []
+            def load(path, *args, **kwargs):
+                used.append(Path(path))
+                if Path(path).resolve() != bundled:
+                    raise AssertionError('Compositor must use the packaged font, not a host font')
+                return actual_loader(path, *args, **kwargs)
+            with patch.object(penna_relay.ImageFont, 'truetype', side_effect=load):
+                result = penna_relay.compose(job)
+            self.assertTrue(result.is_file())
+            self.assertTrue(used)
+
     def test_template_compiles_typed_values_and_never_sends_dialogue_to_model(self):
         with tempfile.TemporaryDirectory() as folder:
             job = penna_relay.prepare(snapshot(), Path(folder))
