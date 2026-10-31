@@ -36,6 +36,17 @@ class DistributionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pack.write_package([(file, 'a.py'), (file, 'A.py')], root / 'collision.zip')
 
+    def test_source_package_excludes_control_discovery_and_crash_remnants(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in ['lib/main.dart', 'backend/control/connection.json.secret-token.tmp',
+                         'assets/control/tasks.json.tmp', 'backend/connection.json.random.tmp',
+                         'backend/control/server.lock', 'backend/tasks.json.tmp']:
+                file = root / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('synthetic', encoding='utf-8')
+            self.assertEqual([name for _, name in pack.source_files(root)], ['lib/main.dart'])
+
     def test_source_package_excludes_user_data_builds_and_model_files(self):
         with tempfile.TemporaryDirectory(prefix='分发 space ') as folder:
             root = Path(folder)

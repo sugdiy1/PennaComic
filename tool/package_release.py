@@ -9,10 +9,10 @@ from pathlib import PurePosixPath
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-EXCLUDED = {'ephemeral', '__pycache__', '.git', '.dart_tool', 'build', 'dist', 'release', 'superpowers'}
+EXCLUDED = {'ephemeral', '__pycache__', '.git', '.dart_tool', 'build', 'dist', 'release', 'superpowers', 'control'}
 TOP_FILES = {'README.md', 'LICENSE', 'NOTICE.md', 'CHANGELOG.md', 'CONTRIBUTING.md', '.gitignore', '.metadata', 'pubspec.yaml', 'pubspec.lock', 'analysis_options.yaml', 'integration.example.json'}
 SOURCE_DIRS = {'lib', 'windows', 'font', 'assets', 'backend', 'workflows', 'test', 'tool', '.github', 'docs'}
-DENIED = {'keys.dat', 'config.json', 'integration.json', 'server-state.json', 'workspace.json', 'layout.json', 'layout_chat.json', 'snapshot.json', 'manifest.json', 'relay-settings.json'}
+DENIED = {'keys.dat', 'config.json', 'integration.json', 'server-state.json', 'workspace.json', 'layout.json', 'layout_chat.json', 'snapshot.json', 'manifest.json', 'relay-settings.json', 'connection.json', 'server.lock', 'tasks.json'}
 
 
 def source_files(root=ROOT):
@@ -20,7 +20,7 @@ def source_files(root=ROOT):
         rel = p.relative_to(root)
         if not p.is_file() or p.is_symlink() or not p.resolve().is_relative_to(root.resolve()) or any(x in EXCLUDED for x in rel.parts):
             continue
-        if p.name.casefold() in DENIED or p.suffix.lower() in {'.gguf', '.safetensors', '.log', '.pyc', '.bak', '.original'}:
+        if p.name.casefold() in DENIED or p.suffix.lower() in {'.gguf', '.safetensors', '.log', '.pyc', '.bak', '.original', '.tmp'}:
             continue
         if rel.parts[0] in SOURCE_DIRS or (len(rel.parts) == 1 and p.name in TOP_FILES):
             yield p, rel.as_posix()
@@ -75,7 +75,7 @@ def main():
         release = args.release_dir
         if not release or not (release / 'penna.exe').is_file() or not (release / 'data/app.so').is_file():
             p.error('Provide a complete fresh Flutter release directory')
-        files = [(f, n) for f, n in files if n.split('/')[0] in {'backend', 'workflows', 'font'} or n in {'README.md', 'NOTICE.md', 'LICENSE', 'integration.example.json', 'docs/VALIDATION.md'}]
+        files = [(f, n) for f, n in files if n.split('/')[0] in {'backend', 'workflows', 'font'} or n in {'README.md', 'NOTICE.md', 'LICENSE', 'integration.example.json', 'docs/VALIDATION.md', 'docs/DSH-MCP.md'}]
         files = [(f, n) for f, n in files if not n.startswith('backend/test_')]
         for f in release.rglob('*'):
             if f.is_file() and not f.is_symlink():

@@ -2,6 +2,12 @@
 // 键是简体中文原文(代码里 tr() 的那句),值是译文。新加 tr() 时三个表都要补,test/l10n_test.dart 会查。
 
 const en = <String, String>{
+  '原作 storyAura/Penna · MIT 许可 · v{0}':
+      'Upstream storyAura/Penna · MIT license · v{0}',
+  'sugdiy1 维护的漫画扩展衍生版 · 非上游官方版本':
+      'Comic extension maintained by sugdiy1 · Unofficial derivative',
+  '上游项目': 'Upstream project',
+
   '显示上次请求的实际用量；输入新内容后显示估算。': 'Shows actual usage of the last request; new input switches to an estimate.',
   '思考：关闭': 'Think: Off',
   '思考：低': 'Think: Low',

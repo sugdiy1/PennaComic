@@ -1,3 +1,5 @@
+import 'core/agent_control/control_runtime.dart';
+import 'core/agent_control/penna_tools.dart';
 import 'core/integration_settings.dart';
 
 import 'dart:async';
@@ -109,6 +111,7 @@ Future<void> main() async {
     saveFile: File('${home.path}${sep}layout_chat.json'),
   );
   await layoutChat.load();
+  ControlRuntime.current.attach(PennaTools(vm: layoutChat, home: home));
   final archive = ArchiveStore(File('${home.path}${sep}archive.json'));
   await archive.load();
   final notebooks = NotebookStore(File('${home.path}${sep}notebooks.json'));
@@ -262,6 +265,7 @@ class _PennaAppState extends State<PennaApp> with WindowListener {
   @override
   Future<void> onWindowClose() async {
     try {
+      await ControlRuntime.current.stop();
       await widget.local.stopServer();
     } finally {
       await windowManager.destroy();

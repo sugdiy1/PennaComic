@@ -85,3 +85,8 @@ controller/
 
 # Internal local development plan
 /docs/superpowers/
+
+# External agent runtime discovery and task state
+connection.json
+server.lock
+control/

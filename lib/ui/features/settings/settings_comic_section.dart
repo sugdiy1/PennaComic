@@ -1,3 +1,5 @@
+import 'settings_control_section.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -147,6 +149,7 @@ class _ComicConnectionSectionState extends State<ComicConnectionSection> {
       SelectableText(message),
       const SizedBox(height: 16),
       SelectableText('独立数据目录：${IntegrationSettings.current.home}'),
+      const ExternalAgentSection(),
     ],
   );
 }

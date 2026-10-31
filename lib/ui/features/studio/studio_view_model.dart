@@ -29,6 +29,7 @@ import '../../../l10n/l10n.dart';
 export 'chat_message.dart';
 
 part 'studio_chat.dart';
+part 'studio_agent_control.dart';
 part 'studio_context.dart';
 part 'studio_draft.dart';
 part 'studio_layout_pages.dart';

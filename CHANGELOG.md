@@ -1,3 +1,11 @@
+# 1.1.0-comic.2 (candidate)
+
+- Added opt-in local control API and Python stdio MCP bridge for DSH.
+- External agents can read/create/update specific pages, select LoRA, submit sequential render batches, poll tasks, list saved results and export CBZ/PDF.
+- Page revisions reject stale edits. External writes update live UI and persist atomically; failed writes restore live review state.
+- Control defaults off on each launch, binds loopback with a fresh bearer token, and exposes no arbitrary shell or file-reading tool.
+- See docs/DSH-MCP.md for setup and task lifecycle limitations. Original Penna attribution and MIT license retained.
+
 # 1.1.0-comic.1 (candidate)
 
 - Integrated comic relay, sequential batches, composition, export and offline novel planning backends.
