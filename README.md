@@ -55,4 +55,4 @@ GitHub Actions配置见 .github/workflows/windows.yml；它仅生成候选构建
 
 ## 发布状态
 
-这是移植候选版，并非已完成跨机器验收的正式版。请先检查 docs/VALIDATION.md 的实际通过与未验证项。原项目与字体/依赖许可见 LICENSE、NOTICE.md 及 font目录许可证。源代码已上传至 https://github.com/sugdiy1/PennaComic （当前为私有仓库）；Windows候选包在Actions构建，未发布Release。
+这是移植候选版，并非已完成跨机器验收的正式版。请先检查 docs/VALIDATION.md 的实际通过与未验证项。原项目与字体/依赖许可见 LICENSE、NOTICE.md 及 font目录许可证。源代码已上传至 https://github.com/sugdiy1/PennaComic （当前为私有仓库）；Windows候选包已在Actions完整构建并通过本机启动检查，未发布Release。
