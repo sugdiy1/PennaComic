@@ -1,3 +1,10 @@
+# 1.1.0-comic.3 (candidate)
+
+- Exposed optional shape in MCP layout schemas: normalized polygon vertices, ellipse and rectangle reset.
+- Added strict shape validation instead of silently clamping/dropping malformed geometry.
+- Verified polygon round trips through control create/read/update, live board and saved reload.
+- Documented that whole-page MOSS generation does not provide exact polygon masks; precise per-panel composition remains a separate path.
+
 # 1.1.0-comic.2 (candidate)
 
 - Added opt-in local control API and Python stdio MCP bridge for DSH.

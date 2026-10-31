@@ -129,6 +129,21 @@ class PennaTools {
           b[1] >= b[3]) {
         _bad('框必须在画布内且有正面积');
       }
+      final shape = box['shape'];
+      if (shape != null && shape != 'ellipse' && shape != 'rect') {
+        if (shape is! List ||
+            shape.length < minShapePoints ||
+            shape.length > maxShapePoints) {
+          _bad('shape 必须为 ellipse、rect/null 或3–16个归一化顶点');
+        }
+        for (final point in shape) {
+          if (point is! List ||
+              point.length != 2 ||
+              point.any((v) => v is! num || !v.isFinite || v < 0 || v > 1)) {
+            _bad('shape 顶点必须是两个0–1之间的有限数值，不是画布像素');
+          }
+        }
+      }
       if (box['label'] != null && !layoutLabels.contains(box['label'])) {
         _bad('未知框类别');
       }

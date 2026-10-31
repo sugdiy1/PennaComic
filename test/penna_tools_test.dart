@@ -246,6 +246,126 @@ void main() {
       blocker.deleteSync();
     }
   });
+  test(
+    'normalized polygon survives create read update save and reload',
+    () async {
+      const polygon = [
+        [0, 0.15],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ];
+      final layout = drawing('斜切格');
+      (layout['boxes'] as List).first['shape'] = polygon;
+      final created = await api.call('penna_create_page', {
+        'series': 0,
+        'layout': layout,
+      });
+      vm.openPage(1);
+      expect(board.layout.boxes.single.shape!.points, [
+        (0.0, 0.15),
+        (1.0, 0.0),
+        (1.0, 1.0),
+        (0.0, 1.0),
+      ]);
+      final read = await api.call('penna_get_page', {
+        'series': 0,
+        'page_number': created['page_number'],
+      });
+      final readLayout = Map<String, dynamic>.from(read['layout'] as Map);
+      expect(((readLayout['boxes'] as List).first as Map)['shape'], polygon);
+      readLayout['caption'] = '修改描述，保留斜切';
+      final changed = await api.call('penna_update_page', {
+        'series': 0,
+        'page_number': created['page_number'],
+        'expected_revision': read['revision'],
+        'layout': readLayout,
+      });
+      expect(
+        ((changed['layout'] as Map)['boxes'] as List).first,
+        containsPair('shape', polygon),
+      );
+      final other = StudioViewModel(
+        config: tempConfig(),
+        streamChat: (_) => const Stream.empty(),
+        layoutOnly: true,
+        layout: LayoutBoard(),
+        saveFile: vm.saveFile,
+      );
+      await other.load();
+      other.openPage(1);
+      expect(
+        other.layout!.layout.boxes.single.shape!.points,
+        board.layout.boxes.single.shape!.points,
+      );
+      other.dispose();
+      other.layout!.dispose();
+    },
+  );
+  test(
+    'MCP schema exposes normalized polygon and explains rendering limits',
+    () {
+      final tool = api.tools.firstWhere(
+        (t) => t['name'] == 'penna_update_page',
+      );
+      final props = ((tool['inputSchema'] as Map)['properties'] as Map);
+      final layout = props['layout'] as Map;
+      final box =
+          (((layout['properties'] as Map)['boxes'] as Map)['items'] as Map);
+      expect((box['properties'] as Map), contains('shape'));
+      expect(layout['description'], contains('0–1'));
+      expect(layout['description'], contains('精确裁切'));
+      final render = api.tools.firstWhere(
+        (t) => t['name'] == 'penna_submit_render',
+      );
+      final renderProps = ((render['inputSchema'] as Map)['properties'] as Map);
+      final settings = (renderProps['settings'] as Map)['properties'] as Map;
+      final lora =
+          ((settings['loras'] as Map)['items'] as Map)['properties'] as Map;
+      expect(lora, isNot(contains('shape')));
+    },
+  );
+  test('invalid shapes are rejected rather than clamped or dropped', () async {
+    final original = await create('one');
+    final badShapes = <Object>[
+      'triangle',
+      [
+        [0, 0],
+        [1, 1],
+      ],
+      [
+        [0, 0],
+        [1, 0],
+        [1.5, 1],
+      ],
+      [
+        [0, 0],
+        [1, 0],
+        ['x', 1],
+      ],
+      List.generate(17, (i) => [i / 17, 0.5]),
+    ];
+    for (final shape in badShapes) {
+      final layout = drawing('bad shape');
+      (layout['boxes'] as List).first['shape'] = shape;
+      await expectLater(
+        api.call('penna_update_page', {
+          'series': 0,
+          'page_number': original['page_number'],
+          'expected_revision': original['revision'],
+          'layout': layout,
+        }),
+        throwsA(isA<ControlException>()),
+      );
+      expect(
+        await api.call('penna_get_page', {
+          'series': 0,
+          'page_number': original['page_number'],
+        }),
+        original,
+      );
+    }
+  });
   test('unknown tool is explicit', () async {
     await expectLater(api.call('shell', {}), throwsA(isA<ControlException>()));
   });

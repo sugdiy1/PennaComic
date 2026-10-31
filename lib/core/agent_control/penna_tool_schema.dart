@@ -5,9 +5,30 @@ const _identity = {
   'series': _integer,
   'page_number': {'type': 'integer', 'minimum': 1},
 };
+const _shape = {
+  'description': '可选形状：ellipse 为椭圆；rect 或 null 恢复矩形；多边形用3–16个[x,y]顶点，坐标是相对本框的0–1比例，不是画布像素。形状用于画板和存档；当前整页MOSS不会按shape精确裁切，需在caption描述轮廓。',
+  'anyOf': [
+    {
+      'type': 'string',
+      'enum': ['ellipse', 'rect'],
+    },
+    {'type': 'null'},
+    {
+      'type': 'array',
+      'minItems': 3,
+      'maxItems': 16,
+      'items': {
+        'type': 'array',
+        'minItems': 2,
+        'maxItems': 2,
+        'items': {'type': 'number', 'minimum': 0, 'maximum': 1},
+      },
+    },
+  ],
+};
 const _layout = {
   'type': 'object',
-  'description': 'Penna Layout 格式：width/height、caption/style、cast 角色卡、canvas(single/multi_panel/collage)、boxes。每个 box 用 box:[left,top,right,bottom] 整数像素，label:object/character/text，caption 描述，text 台词，name 中文名，layer:back/middle/front。请先 get_page 读取示例。',
+  'description': 'Penna Layout 格式：width/height、caption/style、cast 角色卡、canvas(single/multi_panel/collage)、boxes。每个 box 用 box:[left,top,right,bottom] 整数像素，label:object/character/text，caption 描述，text 台词，name 中文名，layer:back/middle/front。shape 支持 ellipse、rect/null 或3–16个0–1归一化顶点。它用于画板和存档，当前整页MOSS不按shape精确裁切；斜边等轮廓还应写入caption。请先 get_page 读取示例。',
   'required': ['width', 'height', 'boxes'],
   'properties': {
     'width': {'type': 'integer', 'minimum': 64, 'maximum': 4096},
@@ -37,6 +58,7 @@ const _layout = {
           'caption': _string,
           'text': _string,
           'name': _string,
+          'shape': _shape,
           'layer': {
             'enum': ['back', 'middle', 'front'],
           },

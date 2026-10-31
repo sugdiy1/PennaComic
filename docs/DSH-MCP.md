@@ -86,3 +86,25 @@ python backend/test_penna_mcp.py -v
 | penna_submit_render / penna_get_task | 单页/多页出图，查询阶段和结果 |
 | penna_list_results | 查看当前稿及旧稿的成品路径 |
 | penna_export_comic | 按页码导出当前稿成品CBZ/PDF到配置输出目录的exports子目录 |
+
+## 斜切、多边形和椭圆
+
+不能根据当前页面的字段并集判断全部可用字段。矩形框不包含可选shape字段，Penna原有数据层仍支持它。控制接口使用内部Layout格式：box是画布整数像素外框，shape多边形是相对这个外框的0–1归一化顶点。不要与旧聊天草稿的画布像素shape坐标混用。
+
+以下是一个左上角斜切的画格，shape按顺序连接并闭合：
+
+```json
+{
+  "box": [40, 40, 790, 560],
+  "label": "object",
+  "name": "第1格",
+  "caption": "Comic panel with a diagonal top edge rising from left to right; an adult courier enters the station.",
+  "shape": [[0, 0.15], [1, 0], [1, 1], [0, 1]],
+  "layer": "middle",
+  "text": ""
+}
+```
+
+`shape: "ellipse"` 是椭圆，`shape: "rect"` 或null恢复矩形；矩形读取结果通常省略shape。多边形支持3–16个顶点，每点恰好两个有限数值，范围0–1。修改其他字段时保留已存在的shape。
+
+shape目前保证画板显示、MCP读写与存档，不保证整页MOSS成品的精确裁切。MOSS只收到外框bbox和描述，必须在caption中说明斜边、圆形等轮廓。严格的多边形蒙版仍需逐格生成后程序合成；现有小说compositor的预设斜切能力尚未接到这个MCP整页出图入口。出血构图可以将box贴到画布边缘，但没有单独的精确出血/无边框控制字段。
