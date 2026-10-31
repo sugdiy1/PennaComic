@@ -62,3 +62,9 @@ Flutter 3.47.2，Dart 3.13.2；pubspec.lock已随源码提供。后端本次使�
 - 通过独立代码审查，角色卡校验、保存失败恢复、打包排除运行连接文件均有回归。
 - 实际DSH界面连接、真实GPU出图与另一台电脑尚未验证。DSH设置不被自动改写；使用随包docs/DSH-MCP.md配置。
 - 关闭控制不取消渲染；渲染期间须保持Penna打开，详见DSH-MCP.md生命周期说明。
+
+### 1.1.0-comic.2 Windows 构建结果
+
+GitHub Actions运行 https://github.com/sugdiy1/PennaComic/actions/runs/41196775934 ，提交ebd355f，完整状态success；云端516项Flutter、66项Python及静态分析通过。Windows ZIP SHA-256：2e0a95d01f5210c41480e5a0c5b258959309ce92d7b900e80c9eff2c0848d539。58项文件逐项验证通过，包含MCP脚本和DSH说明。
+
+本机独立空白数据目录下启动成功，“漫画连接”中的外部控制开关显示正常，默认关闭；命令、参数及独立目录显示正确。没有修改DSH配置，也未在真实DSH中建立会话；控制功能已通过真实桥接子进程与Dart服务/实时工作台的端到端测试，实际DSH连接仍需按页面参数手动配置。没有提交真实GPU生成。
