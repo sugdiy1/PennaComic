@@ -239,17 +239,19 @@ class _About extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Penna 羽毛笔', style: titleStyle),
+                const Text('Penna Comic · 基于 Penna 羽毛笔', style: titleStyle),
                 const SizedBox(height: 2),
                 Text(
-                  tr('文生图提示词工作台 · v{0} · MIT 许可', [appVersion]),
+                  tr('原作 storyAura/Penna · MIT 许可 · v{0}', [appVersion]),
                   style: hintStyle,
                 ),
+                const SizedBox(height: 2),
+                Text(tr('sugdiy1 维护的漫画扩展衍生版 · 非上游官方版本'), style: hintStyle),
               ],
             ),
           ),
           PennaButton(
-            label: 'GitHub',
+            label: tr('上游项目'),
             icon: Icons.open_in_new,
             borderColor: PennaColors.border,
             // 交给系统用默认浏览器打开。

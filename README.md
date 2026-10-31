@@ -1,6 +1,12 @@
 # Penna Comic（移植测试版）
 
-基于 Penna 的 Windows 漫画工作台扩展。保留原项目 MIT 许可证；本版本与原版使用不同的数据目录。
+**Penna Comic 是基于 [storyAura](https://github.com/storyAura) 开发的开源项目 [Penna（羽毛笔）](https://github.com/storyAura/Penna) 修改而来的衍生版本。原始 Penna 的开发成果与版权属于原作者及其贡献者。**
+
+本仓库在原作基础上增加或调整漫画生产相关功能，包括 ComfyUI 接力、串行批量任务、LoRA 选择、程序排字、成品预览与导出，以及移植配置和打包。原作已有的工作台、提示词编辑与其他基础能力沿用上游实现；上面的扩展说明不代表整个项目由本仓库从零开发。
+
+本版本由 sugdiy1 维护，与上游无官方从属关系，也不是原作者发布的官方版本。感谢 storyAura 及上游贡献者提供基础项目。
+
+保留原始 [MIT 许可证与版权声明](LICENSE)：`Copyright (c) 2026 storyAura`。再分发时请一并保留 LICENSE、[第三方说明](NOTICE.md) 和相关字体许可。本版本与原版使用不同的数据目录。
 
 ## 已有功能
 
