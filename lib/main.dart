@@ -31,8 +31,27 @@ import 'ui/features/layout/layout_board.dart';
 import 'ui/features/studio/studio_view_model.dart';
 import 'ui/shell.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    IntegrationSettings.current = IntegrationSettings.fromStartup(
+      arguments: arguments,
+    );
+    await Directory(IntegrationSettings.current.home).create(recursive: true);
+  } on Object catch (e) {
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SelectableText('无法初始化 Penna 数据目录：$e'),
+          ),
+        ),
+      ),
+    );
+    return;
+  }
+
   // 藏掉系统标题栏,换成 PennaApp 里自己画的那条(能放 logo 和字标图片)。
   await windowManager.ensureInitialized();
   await windowManager.setTitleBarStyle(TitleBarStyle.hidden);

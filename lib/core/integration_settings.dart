@@ -5,19 +5,64 @@ import 'package:path/path.dart' as p;
 
 /// 安装目录只放程序；所有个人配置与任务使用独立目录。
 class IntegrationSettings {
-  IntegrationSettings({required this.home, required this.bundleRoot});
-  static IntegrationSettings current = IntegrationSettings(
-    home:
-        Platform.environment['PENNA_HOME'] ??
-        p.join(
-          Platform.environment['APPDATA'] ?? Directory.systemTemp.path,
-          'PennaComic',
+  IntegrationSettings({
+    required this.home,
+    required this.bundleRoot,
+    this.homeSource = 'explicit',
+  });
+  factory IntegrationSettings.fromStartup({
+    List<String> arguments = const [],
+    Map<String, String>? environment,
+    String? executable,
+  }) {
+    final env = environment ?? Platform.environment;
+    String? argumentHome;
+    for (var i = 0; i < arguments.length; i++) {
+      final arg = arguments[i];
+      if (arg == '--home' || arg.startsWith('--home=')) {
+        if (argumentHome != null) throw const FormatException('--home 不能重复');
+        if (arg == '--home') {
+          if (i + 1 >= arguments.length || arguments[i + 1].startsWith('--')) {
+            throw const FormatException('--home 后需要数据目录');
+          }
+          argumentHome = arguments[++i];
+        } else {
+          argumentHome = arg.substring('--home='.length);
+        }
+        if (argumentHome.trim().isEmpty) {
+          throw const FormatException('--home 不能为空');
+        }
+      } else {
+        throw FormatException('未知启动参数：$arg');
+      }
+    }
+    final envHome = env['PENNA_HOME']?.trim();
+    final hasEnv = envHome != null && envHome.isNotEmpty;
+    final root =
+        argumentHome ??
+        (hasEnv
+            ? envHome
+            : p.join(
+                env['APPDATA'] ?? Directory.systemTemp.path,
+                'PennaComic',
+              ));
+    return IntegrationSettings(
+      home: p.normalize(p.absolute(root)),
+      bundleRoot: p.normalize(
+        p.absolute(
+          env['PENNA_BUNDLE_ROOT'] ??
+              File(executable ?? Platform.resolvedExecutable).parent.path,
         ),
-    bundleRoot:
-        Platform.environment['PENNA_BUNDLE_ROOT'] ??
-        File(Platform.resolvedExecutable).parent.path,
-  );
-  final String home, bundleRoot;
+      ),
+      homeSource: argumentHome != null
+          ? '--home'
+          : hasEnv
+          ? 'PENNA_HOME'
+          : 'APPDATA',
+    );
+  }
+  static IntegrationSettings current = IntegrationSettings.fromStartup();
+  final String home, bundleRoot, homeSource;
   Map<String, dynamic> data = {};
   String get configPath => p.join(home, 'integration.json');
   String _path(String key, String fallback) {

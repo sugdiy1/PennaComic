@@ -47,7 +47,7 @@ Penna 的 MCP 桥接器让 DSH 读取页面、修改分镜、提交渲染和导�
 
 工具的准确参数以 DSH 获取的工具描述为准。页面由整数 `series` 和从 1 开始的 `page_number` 标识。编辑现有页面时，先调用 `penna_get_page`，取得完整页面和 `revision`；调用 `penna_update_page` 时把这个值作为 `expected_revision`。布局沿用读取结果中的 Penna `Layout.toJson` 结构。
 
-若提示版本冲突，重新读取页面并结合最新内容修改，不要重复提交旧版本。渲染提交会快速返回任务编号，使用 `penna_get_task` 查询；不要为了等结果而重复提交同一渲染。Penna 正在内置对话生成时可能拒绝页面修改，等对话完成后重新读取再操作。没有删除页面工具。
+若提示版本冲突，重新读取页面并结合最新内容修改，不要重复提交旧版本。渲染提交会快速返回任务编号，使用 `penna_get_task` 查询；不要为了等结果而重复提交同一渲染。Penna 正在内置对话生成时可能拒绝页面修改，等对话完成后重新读取再操作。没有删除页面工具。可用 penna_flush 显式确认分镜保存，用 penna_cancel_render(task_id) 取消本工具提交的任务。
 
 ## 连接范围
 
@@ -69,7 +69,7 @@ python backend/test_penna_mcp.py -v
 
 ## 任务与窗口生命周期
 
-关闭“外部 Agent 控制”只断开连接，不取消已经提交的出图。出图期间请保持 Penna 运行，等 penna_get_task 返回 done 或 error 后再退出。当前版本没有远程取消出图工具；不要通过结束进程来取消正在占用GPU的任务。
+关闭“外部 Agent 控制”只断开连接，不取消已经提交的出图。出图期间请保持 Penna 运行，等 penna_get_task 返回 done 或 error 后再退出。可调用 penna_cancel_render(task_id) 发出取消请求；先返回cancelling，待penna_get_task确认cancelled后再退出。只停止该任务后续提交，删除它自己的待执行prompt，按prompt_id中断它自己的运行任务；不清空他人队列。不要通过结束进程来取消正在占用GPU的任务。
 
 若 Penna 意外退出，下次启动会将未确认完成的控制任务标记为 interrupted。重新连接后先查成品/任务状态，按相同页面和参数重新提交可查找已保存批次续跑；已完成页由后端校验后跳过。不能承诺退出后的后端一定继续完成。
 
@@ -108,3 +108,15 @@ python backend/test_penna_mcp.py -v
 `shape: "ellipse"` 是椭圆，`shape: "rect"` 或null恢复矩形；矩形读取结果通常省略shape。多边形支持3–16个顶点，每点恰好两个有限数值，范围0–1。修改其他字段时保留已存在的shape。
 
 shape目前保证画板显示、MCP读写与存档，不保证整页MOSS成品的精确裁切。MOSS只收到外框bbox和描述，必须在caption中说明斜边、圆形等轮廓。严格的多边形蒙版仍需逐格生成后程序合成；现有小说compositor的预设斜切能力尚未接到这个MCP整页出图入口。出血构图可以将box贴到画布边缘，但没有单独的精确出血/无边框控制字段。
+
+## 数据目录、存档与诊断（1.1.0-comic.4）
+
+桌面程序和MCP都支持 `--home <绝对目录>`。桌面目录优先级为命令行--home、PENNA_HOME环境变量、APPDATA/PennaComic默认值。设置页会显示实际运行目录及分镜存档位置；MCP的--home必须与它一致。控制服务默认关闭，connection.json仅在成功开启期间存在，关闭后删除；不要删除运行实例的server.lock来尝试解锁。锁文件存在本身不代表被占用。
+
+分镜工作台的分页存档为layout_chat.json；workspace.json是另一个提示词成稿工作区。create/update已自动原子落盘，penna_flush是额外的保存确认，成功返回实际save_path和page_count。不要将两个存档互相覆盖。
+
+layout.json会在启动时读取，随后区域工作台会载入layout_chat.json中选中的页。空白旧存档可收纳layout.json，但已有页面优先，不会因为外部改了layout.json就覆盖当前分镜。需要修改已有页请通过MCP或界面导入。
+
+连接失败时请查看设置页具体错误：文件系统错误含数据目录和系统错误码；锁占用与端口失败分别显示，不再统一归因为另一个实例。penna_status还会返回home和save_path供Agent核对。
+
+渲染取消依赖ComfyUI对prompt_id定向interrupt的支持。本机0.43.1已核对实现支持；本程序不发送无prompt_id的全局interrupt，也不发送全局清队列。取消后显存恢复仍需等待ComfyUI队列空闲。

@@ -68,3 +68,12 @@ Flutter 3.47.2，Dart 3.13.2；pubspec.lock已随源码提供。后端本次使�
 GitHub Actions运行 https://github.com/sugdiy1/PennaComic/actions/runs/41196775934 ，提交ebd355f，完整状态success；云端516项Flutter、66项Python及静态分析通过。Windows ZIP SHA-256：2e0a95d01f5210c41480e5a0c5b258959309ce92d7b900e80c9eff2c0848d539。58项文件逐项验证通过，包含MCP脚本和DSH说明。
 
 本机独立空白数据目录下启动成功，“漫画连接”中的外部控制开关显示正常，默认关闭；命令、参数及独立目录显示正确。没有修改DSH配置，也未在真实DSH中建立会话；控制功能已通过真实桥接子进程与Dart服务/实时工作台的端到端测试，实际DSH连接仍需按页面参数手动配置。没有提交真实GPU生成。
+
+## 1.1.0-comic.4 MCP问题修复
+
+- 桌面--home参数接入并优先于环境变量，启动创建实际数据目录；UI显示实时控制实例的目录和分镜存档路径。
+- 控制启动的文件系统、锁占用、端口、初始化错误分别报告；失败后可重试。
+- penna_flush确认真实分镜归档与画板写入；51页重新加载和失败传播有回归。
+- penna_cancel_render通过专属标记停止后续提交/重试，只删除自有queued prompt并按prompt_id中断自有running prompt；本机ComfyUI已只读核对支持定向interrupt，不改内核。
+- 修复在提交前取消导致意图标记残留、无法续跑的问题；网络提交结果未知时仍保留防重复机制。
+- 明确主成稿workspace.json与分镜layout_chat.json分离，layout.json载入后已有分镜页优先。没有据报告推断数据丢失或覆盖现存用户作品。

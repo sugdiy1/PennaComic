@@ -3,6 +3,45 @@ part of 'studio_view_model.dart';
 /// 外部控制也走工作台的内存状态、撤销记录和原子存盘。
 /// 整个提交同步完成，UI 事件不能插到版本核对与写入之间。
 extension StudioAgentControl on StudioViewModel {
+  /// Explicit durability barrier for the live page and the current board.
+  /// Unlike debounced UI saving, filesystem failures propagate to the caller.
+  Map<String, Object?> agentFlush() {
+    if (isStreaming) throw StateError('内置 Agent 正在回复，请等回复结束');
+    if (!layoutOnly || layout == null) throw StateError('需要区域分镜工作台');
+    final file = saveFile;
+    if (file == null) throw StateError('工作台未配置保存路径');
+    _pullBoard();
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    void write(File target, Object data) {
+      target.parent.createSync(recursive: true);
+      File('${target.path}.agent.tmp')
+        ..writeAsStringSync(jsonEncode(data), flush: true)
+        ..renameSync(target.path);
+    }
+
+    write(file, toJson());
+    final board = layout!;
+    final boardDir = board.dir;
+    final boardFile = boardDir == null
+        ? null
+        : File('${boardDir.path}/layout.json');
+    if (boardFile != null) {
+      write(boardFile, {
+        'layout': board.layout.toJson(),
+        'sizes': [
+          for (final size in board.sizes) [size.width, size.height],
+        ],
+      });
+    }
+    return {
+      'persisted': true,
+      'save_path': file.absolute.path,
+      if (boardFile != null) 'board_save_path': boardFile.absolute.path,
+      'page_count': pages.length,
+    };
+  }
+
   T _agentCommit<T>(T Function() change) {
     if (isStreaming) throw StateError('内置 Agent 正在回复，请等回复结束');
     if (!layoutOnly || layout == null) throw StateError('需要区域分镜工作台');

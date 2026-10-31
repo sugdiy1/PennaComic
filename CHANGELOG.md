@@ -1,3 +1,11 @@
+# 1.1.0-comic.4 (candidate)
+
+- Desktop --home now selects the actual data directory, ahead of PENNA_HOME and APPDATA defaults.
+- Display runtime home/archive and distinct filesystem, lock and socket diagnostics; failed control startup remains retryable.
+- Added penna_flush durability confirmation and penna_cancel_render cooperative task cancellation.
+- Cancel stops later submissions, preserves completed pages, targets only owned ComfyUI prompts and protects resumability before submission.
+- Clarified layout_chat.json versus workspace.json and startup board/page precedence.
+
 # 1.1.0-comic.3 (candidate)
 
 - Exposed optional shape in MCP layout schemas: normalized polygon vertices, ellipse and rectangle reset.

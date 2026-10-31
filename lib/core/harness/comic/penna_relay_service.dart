@@ -119,6 +119,7 @@ class PennaRelayService {
   Stream<RelayEvent> run(
     Map<String, Object?> snapshot, {
     String? resume,
+    String? cancelFile,
   }) async* {
     if (!File(python).existsSync() || !File(backend).existsSync()) {
       throw const FileSystemException('一键接力后端不存在，请检查本机安装目录。');
@@ -142,6 +143,7 @@ class PennaRelayService {
               : '--resume',
           resume,
         ],
+        if (cancelFile != null) ...['--cancel-file', cancelFile],
       ],
       environment: IntegrationSettings.current.environment,
       runInShell: false,
@@ -156,7 +158,11 @@ class PennaRelayService {
       final data = jsonDecode(line);
       if (data is! Map<String, dynamic>) continue;
       final event = RelayEvent.fromJson(data);
-      terminal = terminal || event.stage == 'done' || event.stage == 'error';
+      terminal =
+          terminal ||
+          event.stage == 'done' ||
+          event.stage == 'error' ||
+          event.stage == 'cancelled';
       yield event;
     }
     final exit = await process.exitCode;

@@ -84,6 +84,7 @@ Map<String, Object?> _tool(
 };
 List<Map<String, Object?>> pennaToolSchema() => [
   _tool('penna_status', '读取连接、当前系列和页面、任务状态。不调用内置聊天模型。', {}, []),
+  _tool('penna_flush', '立即保存全部分镜页和当前画板，返回实际存档路径及页数；失败不报告已保存。', {}, []),
   _tool('penna_list_pages', '列出分镜页及版本号；series 省略时列全部。', {
     'series': _integer,
   }, []),
@@ -152,6 +153,12 @@ List<Map<String, Object?>> pennaToolSchema() => [
     ['series', 'page_numbers'],
   ),
   _tool('penna_get_task', '查询出图任务阶段、结果和错误。', {'task_id': _string}, ['task_id']),
+  _tool(
+    'penna_cancel_render',
+    '请求取消本应用当前出图任务，停止继续提交页面。立即返回 cancelling，用 get_task 等待 cancelled；不清空其他任务或全局中断。',
+    {'task_id': _string},
+    ['task_id'],
+  ),
   _tool(
     'penna_list_results',
     '查找指定系列成品。标记是否匹配当前分镜，可读取旧版本但不冒充新稿。',

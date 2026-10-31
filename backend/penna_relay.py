@@ -13,6 +13,7 @@ import uuid
 from PIL import Image, ImageDraw, ImageFont
 from gpu_mode import Controller, COMFY, controller_lock
 from runtime_config import CONFIG
+from render_cancel import RenderCancelled, RenderCancelToken
 
 TEMPLATE = CONFIG.workflow
 OUTPUT = CONFIG.output
@@ -256,12 +257,14 @@ def queued_prompt_ids(controller):
             for key in ("queue_running", "queue_pending") for entry in queue.get(key, [])}
 
 
-def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None):
+def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None, cancel_token=None):
     """Render one saved job. Batch callers own the GPU lifecycle and event stream."""
     job = Path(job)
     c = controller or Controller()
     manifest = json.loads((job / "manifest.json").read_text(encoding="utf-8"))
     start = time.monotonic()
+    cancel = cancel_token or RenderCancelToken()
+    prompt_id = manifest.get('prompt_id')
     def stage(name, message, **data):
         manifest.update(status=name, updated_at=time.time(), **data)
         write_json(job / "manifest.json", manifest)
@@ -271,6 +274,7 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
         return job / "page.png"
     image_phase = False
     try:
+        cancel.check(c, prompt_id)
         if not (job / "raw.png").is_file():
             prompt_id = manifest.get("prompt_id")
             if manage_gpu:
@@ -280,6 +284,7 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
                 c.adopt_configured_server()
                 image_phase = True
                 c.image()
+                cancel.check(c, prompt_id)
             resumed = bool(prompt_id)
             if not prompt_id:
                 c.assert_comfy_idle()
@@ -289,11 +294,19 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
                 if manifest.get("submission_started"):
                     raise RuntimeError("上次提交结果未知，请检查 ComfyUI；为避免重复任务，不会自动重新提交。")
                 stage("submitting", "正在提交已保存的分镜…", submission_started=True)
+                try:
+                    cancel.check(c)
+                except RenderCancelled:
+                    # The HTTP request has definitely not begun. Preserve
+                    # ambiguous intents only after entering c.api('/prompt').
+                    manifest.pop('submission_started', None)
+                    raise
                 response = c.api(COMFY, "/prompt", {"prompt": workflow, "client_id": "penna-relay"}, timeout=30)
                 prompt_id = response["prompt_id"]
             stage("rendering", "ComfyUI 正在生成，通常需要 1–2 分钟…", prompt_id=prompt_id)
             deadline = time.monotonic() + timeout
             while True:
+                cancel.check(c, prompt_id)
                 history = c.api(COMFY, f"/history/{prompt_id}").get(prompt_id)
                 if history is not None: break
                 if resumed and prompt_id not in queued_prompt_ids(c):
@@ -301,6 +314,7 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
                 if time.monotonic() >= deadline:
                     raise TimeoutError("出图等待超时。任务记录已保留，请先查看 ComfyUI 状态。")
                 time.sleep(1)
+            cancel.check(c, prompt_id)
             write_json(job / "comfy-history.json", history)
             if history.get("status", {}).get("status_str") == "error":
                 raise RuntimeError("ComfyUI 生成失败，详细错误已保存到 comfy-history.json。")
@@ -313,6 +327,7 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
             temp.write_bytes(raw)
             with Image.open(temp) as image:image.verify()
             temp.replace(job / "raw.png")
+        cancel.check(c, prompt_id)
         stage("composing", "画面已生成，正在排入台词气泡…")
         path=compose(job)
         if manage_gpu:
@@ -322,13 +337,21 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
               image=str(path), elapsed_seconds=round(time.monotonic()-start, 2))
         return path
     except Exception as exc:
+        if cancel.cancelled and not isinstance(exc, RenderCancelled):
+            try:
+                cancel.check(c, prompt_id)
+            except RenderCancelled as cancellation:
+                exc = cancellation
         restore_error=None
         if manage_gpu and image_phase:
-            try:c.chat()
+            try:
+                c.assert_comfy_idle()
+                c.chat()
             except Exception as restore:restore_error=str(restore)
-        stage("error", str(exc), error=str(exc), restore_error=restore_error,
+        stage("cancelled" if isinstance(exc, RenderCancelled) else "error", str(exc), error=str(exc), restore_error=restore_error,
               image=str(job / "page.png") if (job / "page.png").is_file() else None)
-        raise
+        if isinstance(exc, RenderCancelled): exc.emitted = True
+        raise exc
 
 
 def main():
@@ -339,9 +362,11 @@ def main():
     inputs.add_argument("--batch")
     inputs.add_argument("--resume-batch")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--cancel-file", help="Absolute home/control/cancel/<taskid>.json marker")
     args=parser.parse_args()
     batch_dir = Path(args.resume_batch).resolve() if args.resume_batch else None
     try:
+        cancel = RenderCancelToken(args.cancel_file)
         with controller_lock():
             if args.batch or args.resume_batch:
                 from penna_batch import prepare_batch, run_batch
@@ -352,7 +377,7 @@ def main():
                 else:
                     batch_dir = Path(args.resume_batch).resolve()
                 if not args.prepare_only:
-                    run_batch(batch_dir)
+                    run_batch(batch_dir, cancel_token=cancel)
                 else:
                     from penna_batch import load_batch, batch_event
                     batch_event(batch_dir, load_batch(batch_dir), "saved", "批次快照已全部保存。")
@@ -365,15 +390,15 @@ def main():
                 job=prepare(snapshot)
                 write_json(CONFIG.home/'relay-settings.json',snapshot.get('settings',{}))
                 emit("saved", "当前分镜和生图参数已保存。", job_dir=str(job))
-            if not (args.batch or args.resume_batch) and not args.prepare_only:run(job)
+            if not (args.batch or args.resume_batch) and not args.prepare_only:run(job, cancel_token=cancel)
         return 0
     except Exception as exc:
         if not getattr(exc, "emitted", False):
             if args.batch or args.resume_batch:
-                emit("error", str(exc), batch_dir=str(batch_dir) if batch_dir else None,
+                emit("cancelled" if isinstance(exc, RenderCancelled) else "error", str(exc), batch_dir=str(batch_dir) if batch_dir else None,
                      page_index=None, page_total=0, job_dir=None, image=None, pages=[])
             else:
-                emit("error", str(exc))
+                emit("cancelled" if isinstance(exc, RenderCancelled) else "error", str(exc))
         return 1
 
 

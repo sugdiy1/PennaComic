@@ -24,7 +24,7 @@ class PennaTools {
       final saved = jsonDecode(_taskFile.readAsStringSync()) as Map;
       for (final e in saved.entries) {
         final value = Map<String, Object?>.from(e.value as Map);
-        if (value['status'] == 'running') {
+        if (value['status'] == 'running' || value['status'] == 'cancelling') {
           value['status'] = 'interrupted';
           value['message'] = '程序已重启；按原参数再次提交可续跑已保存批次';
         }
@@ -40,6 +40,9 @@ class PennaTools {
   final ComicExportService exporter;
   final Map<String, Map<String, Object?>> _tasks = {};
   bool _rendering = false;
+  String? _activeTask;
+  File _cancelFile(String id) =>
+      File('${home.absolute.path}/control/cancel/$id.json');
   List<Map<String, Object?>> get tools => pennaToolSchema();
   bool get busy => _rendering;
   File get _taskFile => File('${home.path}/control/tasks.json');
@@ -220,6 +223,8 @@ class PennaTools {
         return {
           'application': 'Penna Comic',
           'protocol': 1,
+          'home': home.absolute.path,
+          'save_path': vm.saveFile?.absolute.path,
           'current_series': vm.series,
           'current_page': vm.pageNumber(vm.pageIndex),
           'page_count': vm.pages.length,
@@ -237,6 +242,9 @@ class PennaTools {
         };
       case 'penna_get_page':
         return _page(_index(a));
+      case 'penna_flush':
+        _editable();
+        return vm.agentFlush();
       case 'penna_create_page':
         _editable();
         final layout = _validateLayout(a['layout']);
@@ -288,6 +296,33 @@ class PennaTools {
       case 'penna_get_task':
         final task = _tasks[_text(a, 'task_id')];
         if (task == null) throw const ControlException('not_found', '任务不存在');
+        return Map.from(task);
+      case 'penna_cancel_render':
+        final id = _text(a, 'task_id');
+        final task = _tasks[id];
+        if (task == null) throw const ControlException('not_found', '任务不存在');
+        if ([
+          'done',
+          'error',
+          'cancelled',
+          'interrupted',
+        ].contains(task['status'])) {
+          return Map.from(task);
+        }
+        if (id != _activeTask || !_rendering) {
+          throw const ControlException('not_found', '没有此应用拥有的活动任务');
+        }
+        final marker = _cancelFile(id);
+        marker.parent.createSync(recursive: true);
+        marker.writeAsStringSync(
+          jsonEncode({
+            'task_id': id,
+            'cancel_requested_at': DateTime.now().toUtc().toIso8601String(),
+          }),
+          flush: true,
+        );
+        task.addAll({'status': 'cancelling', 'message': '已请求取消，等待当前任务停止'});
+        _saveTasks();
         return Map.from(task);
       case 'penna_list_results':
         final snapshots = _snapshots(_int(a, 'series'));
@@ -430,8 +465,11 @@ class PennaTools {
       ) as Map,
     );
     _rendering = true;
+    _activeTask = id;
     final task = <String, Object?>{
       'task_id': id,
+      'home': home.absolute.path,
+      'save_path': vm.saveFile?.absolute.path,
       'status': 'running',
       'stage': 'queued',
       'message': '分镜已冻结，等待后端',
@@ -444,6 +482,7 @@ class PennaTools {
       _saveTasks();
     } catch (_) {
       _rendering = false;
+      _activeTask = null;
       _tasks.remove(id);
       rethrow;
     }
@@ -462,17 +501,35 @@ class PennaTools {
     Map<String, Object?> task,
     Map<String, Object?> request,
   ) async {
+    final cancelFile = _cancelFile(task['task_id'] as String);
+    bool cancelled() {
+      if (!cancelFile.existsSync()) return false;
+      task.addAll({
+        'status': 'cancelled',
+        'stage': 'cancelled',
+        'message': '任务已取消，未继续提交页面',
+      });
+      return true;
+    }
+
     try {
+      if (cancelled()) return;
       final selected = (request['settings'] as Map)['loras'] as List;
       if (selected.isNotEmpty) {
         final available = await relay.listLoras();
+        if (cancelled()) return;
         if (selected.any((l) => !available.contains((l as Map)['name']))) {
           throw const ControlException('invalid_lora', '选中的LoRA不存在，请重新读取列表');
         }
       }
       final resume = await relay.findPendingBatch(request);
+      if (cancelled()) return;
       var terminal = false;
-      await for (final event in relay.run(request, resume: resume)) {
+      await for (final event in relay.run(
+        request,
+        resume: resume,
+        cancelFile: cancelFile.path,
+      )) {
         task.addAll({
           'stage': event.stage,
           'message': event.message,
@@ -481,7 +538,9 @@ class PennaTools {
           if (event.image != null) 'image': event.image,
           if (event.pages.isNotEmpty) 'pages': event.pages,
         });
-        if (event.stage == 'done' || event.stage == 'error') {
+        if (event.stage == 'done' ||
+            event.stage == 'error' ||
+            event.stage == 'cancelled') {
           terminal = true;
           task['status'] = event.stage;
         }
@@ -500,6 +559,7 @@ class PennaTools {
       });
     } finally {
       _rendering = false;
+      _activeTask = null;
       task['finished_at'] = DateTime.now().toUtc().toIso8601String();
       try {
         _saveTasks();

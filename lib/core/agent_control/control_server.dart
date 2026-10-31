@@ -59,11 +59,18 @@ class ControlServer {
         .open(mode: FileMode.append);
     try {
       await lock.lock(FileLock.exclusive);
-    } on FileSystemException {
+    } on FileSystemException catch (e) {
       await lock.close();
-      throw const ControlException(
-        'already_running',
-        'Another control server is already using this home.',
+      final code = e.osError?.errorCode;
+      if ([11, 33, 35].contains(code)) {
+        throw ControlException(
+          'already_running',
+          '控制锁已被占用（系统错误$code）：${directory.path}/server.lock',
+        );
+      }
+      throw ControlException(
+        'lock_failed',
+        '无法取得控制锁（系统错误${code ?? "未知"}）：${directory.path}/server.lock。${e.osError?.message ?? e.message}',
       );
     }
     _lock = lock;

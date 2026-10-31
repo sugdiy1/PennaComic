@@ -11,7 +11,11 @@ class FakeRelay extends PennaRelayService {
   int calls = 0;
   Map<String, Object?>? captured;
   @override
-  Stream<RelayEvent> run(Map<String, Object?> snapshot, {String? resume}) {
+  Stream<RelayEvent> run(
+    Map<String, Object?> snapshot, {
+    String? resume,
+    String? cancelFile,
+  }) {
     calls++;
     captured = snapshot;
     return events.stream;

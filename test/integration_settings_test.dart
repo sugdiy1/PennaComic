@@ -32,6 +32,45 @@ void main() {
     );
     expect(loaded.data['mode'], 'external');
   });
+  test(
+    'desktop --home overrides environment and resolves absolute runtime path',
+    () {
+      final c = IntegrationSettings.fromStartup(
+        arguments: ['--home', '漫画 home'],
+        environment: {'PENNA_HOME': 'ignored', 'APPDATA': 'ignored'},
+        executable: File('app/penna.exe').absolute.path,
+      );
+      expect(c.home, Directory('漫画 home').absolute.path);
+      expect(c.homeSource, '--home');
+      final equals = IntegrationSettings.fromStartup(
+        arguments: ['--home=漫画 home'],
+        environment: {},
+        executable: File('app/penna.exe').absolute.path,
+      );
+      expect(equals.home, c.home);
+      final env = IntegrationSettings.fromStartup(
+        arguments: [],
+        environment: {'PENNA_HOME': Directory('env-home').absolute.path},
+        executable: File('app/penna.exe').absolute.path,
+      );
+      expect(env.homeSource, 'PENNA_HOME');
+      expect(env.home, Directory('env-home').absolute.path);
+      expect(
+        () => IntegrationSettings.fromStartup(
+          arguments: ['--home'],
+          environment: {},
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => IntegrationSettings.fromStartup(
+          arguments: ['--home', 'a', '--home', 'b'],
+          environment: {},
+        ),
+        throwsFormatException,
+      );
+    },
+  );
   test('无效网址不能覆盖已有配置', () async {
     final dir = Directory.systemTemp.createTempSync('integration');
     addTearDown(() => dir.deleteSync(recursive: true));

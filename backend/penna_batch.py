@@ -11,6 +11,7 @@ import time
 import uuid
 
 import penna_relay as relay
+from render_cancel import RenderCancelled, RenderCancelToken
 
 
 class BatchError(RuntimeError):
@@ -131,13 +132,18 @@ def load_batch(batch_dir):
     return batch
 
 
-def run_batch(batch_dir, controller=None, timeout=1800):
+def run_batch(batch_dir, controller=None, timeout=1800, cancel_token=None):
     """Run pages serially, reusing one image-mode interval and one safe restore."""
     batch_dir = Path(batch_dir).resolve()
     batch = load_batch(batch_dir)
     c = controller or relay.Controller()
+    cancel = cancel_token or RenderCancelToken()
     work = []
     for page in batch["pages"]:
+        # Do not create retry versions after cancellation was requested.
+        if cancel.cancelled:
+            work.append(page)
+            continue
         redo = False
         redo_message = "重做已保存为独立新版本。"
         if page["status"] == "done" and page["image"]:
@@ -169,7 +175,24 @@ def run_batch(batch_dir, controller=None, timeout=1800):
     failure = None
     restore_error = None
     image_phase = bool(batch.get("gpu_restore_pending"))
+    cancelled = None
+    def check_cancel():
+        if not cancel.cancelled:
+            return
+        # Resume may already own a queued prompt before this process switches
+        # modes. Cancel only IDs persisted in this batch's unfinished jobs.
+        for page in work:
+            if page['status'] == 'done':
+                continue
+            prompt_id = read_json(Path(page['job_dir']) / 'manifest.json').get('prompt_id')
+            if prompt_id:
+                try:
+                    cancel.check(c, prompt_id)
+                except RenderCancelled:
+                    pass
+        cancel.check()
     try:
+        check_cancel()
         if work:
             owned_ids = {read_json(Path(page["job_dir"]) / "manifest.json").get("prompt_id") for page in work}
             if relay.queued_prompt_ids(c) - owned_ids:
@@ -182,16 +205,19 @@ def run_batch(batch_dir, controller=None, timeout=1800):
             relay.write_json(batch_dir / "batch.json", batch)
             c.image()
         for page in work:
+            check_cancel()
             def on_stage(stage, message, **data):
-                event = "page_error" if stage == "error" else "page_done" if stage == "done" else "page_rendering"
-                page.update(status="error" if stage == "error" else "done" if stage == "done" else "rendering")
+                event = "page_cancelled" if stage == "cancelled" else "page_error" if stage == "error" else "page_done" if stage == "done" else "page_rendering"
+                page.update(status="cancelled" if stage == "cancelled" else "error" if stage == "error" else "done" if stage == "done" else "rendering")
                 if "image" in data: page["image"] = data["image"]
                 if "error" in data: page["error"] = data["error"]
                 if stage == "done": page["error"] = None
                 batch_event(batch_dir, batch, event, message, page, **{
                     k: v for k, v in data.items() if k not in ("job_dir", "image")})
             try:
-                relay.run(Path(page["job_dir"]), c, timeout=timeout, manage_gpu=False, event_callback=on_stage)
+                relay.run(Path(page["job_dir"]), c, timeout=timeout, manage_gpu=False, event_callback=on_stage, cancel_token=cancel)
+            except RenderCancelled:
+                raise
             except Exception as exc:
                 failure = str(exc)
                 # A timed-out or externally queued GPU job cannot overlap with
@@ -200,6 +226,8 @@ def run_batch(batch_dir, controller=None, timeout=1800):
                     c.assert_comfy_idle()
                 except Exception:
                     break
+    except RenderCancelled as exc:
+        cancelled = exc
     except Exception as exc:
         failure = str(exc)
     finally:
@@ -213,6 +241,11 @@ def run_batch(batch_dir, controller=None, timeout=1800):
                 batch["gpu_restore_pending"] = False
             except Exception as exc:
                 restore_error = str(exc)
+    if cancelled:
+        batch.update(status="cancelled", error=None, restore_error=restore_error)
+        batch_event(batch_dir, batch, "cancelled", str(cancelled), restore_error=restore_error)
+        cancelled.emitted = True
+        raise cancelled
     incomplete = [page for page in batch["pages"] if page["status"] != "done"]
     if failure or restore_error or incomplete:
         message = failure or ("恢复对话模型失败：" + restore_error if restore_error else "部分页面未完成。")

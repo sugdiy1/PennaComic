@@ -77,7 +77,7 @@ void main() {
       });
       expect(init['protocolVersion'], '2025-03-26');
       final listing = await rpc('tools/list', {});
-      expect(listing['tools'], hasLength(10));
+      expect(listing['tools'], hasLength(12));
       final created = content(
         await call('penna_create_page', {
           'series': 0,
