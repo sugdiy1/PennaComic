@@ -66,3 +66,7 @@ GitHub Actions配置见 .github/workflows/windows.yml；它仅生成候选构建
 ## 发布状态
 
 这是移植候选版，并非已完成跨机器验收的正式版。请先检查 docs/VALIDATION.md 的实际通过与未验证项。原项目与字体/依赖许可见 LICENSE、NOTICE.md 及 font目录许可证。源代码已上传至 https://github.com/sugdiy1/PennaComic （公开仓库）；Windows候选包已在Actions完整构建并通过本机启动检查，未发布Release。
+
+## MOSS 接 Qwen 修改（1.1.0-comic.6）
+
+一键接力中可选「MOSS 生成」「MOSS 生成后由 Qwen 修改」「只修改已有图片」。支持填写修改要求、保留原稿和批量生成后修改，详见 [使用与模型配套](docs/MOSS-QWEN.md)。

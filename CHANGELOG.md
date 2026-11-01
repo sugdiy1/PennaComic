@@ -1,3 +1,10 @@
+# 1.1.0-comic.6
+
+- 一键接力增加 MOSS 生成、生成后由 Qwen 修改、只修改已有图片三种模式。
+- 支持填写修改要求、独立修改步数、原稿保留及批量生成后修改。
+- 修改模式明确读取最终输出节点，避免误将原稿作为修改稿。
+- 沿用专属任务取消和断点续跑，不包含模型与用户作品。
+
 # 1.1.0-comic.5 (candidate)
 
 - New relay jobs send dialogue and text regions directly to MOSS; no programmatic lettering or text suppression.

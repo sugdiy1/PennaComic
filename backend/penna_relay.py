@@ -50,9 +50,13 @@ def prepare(snapshot, root=OUTPUT):
     if any(not isinstance(v, int) or not 64 <= v <= 4096 or v % 16 for v in (width, height)):
         raise ValueError("画布宽高应为 64–4096 之间的 16 的倍数。")
     layout = json.loads(json.dumps(snapshot["layout"]))
+    if snapshot.get('settings', {}).get('render_mode') == 'edit_only':
+        layout = {'summary': {'caption': '导入漫画参考图修改'}, 'items': []}
     if not isinstance(layout.get("items"), list) or not isinstance(layout.get("summary"), dict):
         raise ValueError("当前页面缺少有效的 MOSS 分镜。")
     settings = snapshot.get("settings", {})
+    from qwen_edit import options, attach
+    edit, reference = options(settings, width, height)
     steps, seed = int(settings.get("steps", 50)), int(settings.get("seed", 42))
     strength, cfg = float(settings.get("strength", .85)), float(settings.get("cfg", 3))
     if not 1 <= steps <= 100 or not 0 <= seed < 2**53 or not 0 <= strength <= 2 or not 0 <= cfg <= 20:
@@ -131,15 +135,18 @@ def prepare(snapshot, root=OUTPUT):
     job.mkdir(parents=True, exist_ok=False)
     workflow["11"]["inputs"]["filename_prefix"] = f"moss/penna-relay/{job_id}"
     workflow["6"]["inputs"]["text"] = "watermark"
+    workflow = attach(workflow, edit, seed, f"moss/penna-relay/{job_id}")
+    if reference is not None:
+        shutil.copyfile(reference, job / 'reference.png')
     source = snapshot.get("source", snapshot["layout"])
     page = {"title": snapshot.get("title", "当前分镜"), "width": width, "height": height,
             "source": source, "source_hash": content_hash(source),
             "context": snapshot.get("context", {}), "original_layout": snapshot["layout"],
-            "settings": params | {"loras":loras}, "text_mode": "model", "dialogues": []}
+            "settings": params | {"loras":loras} | edit, "text_mode": "model", "dialogues": []}
     write_json(job / "snapshot.json", snapshot)
     write_json(job / "page.json", page)
     write_json(job / "workflow.json", workflow)
-    write_json(job / "manifest.json", {"status": "saved", "text_mode": "model", "job_id": job_id, "seed": seed,
+    write_json(job / "manifest.json", {"status": "saved", "text_mode": "model", **edit, "job_id": job_id, "seed": seed,
         "lora": lora, "lora_strength": strength, "loras":loras, "steps": steps, "prompt": prompt,
         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "started_at": time.time(),
         "source_hash": page["source_hash"], "context": page["context"], "snapshot_hash": content_hash(snapshot)})
@@ -269,6 +276,10 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
             if not prompt_id:
                 c.assert_comfy_idle()
                 workflow = json.loads((job / "workflow.json").read_text(encoding="utf-8"))
+                if manifest.get('render_mode') == 'edit_only':
+                    from qwen_edit import upload_reference
+                    workflow['qwen_reference']['inputs']['image'] = upload_reference(job, COMFY)
+                    write_json(job / 'workflow.json', workflow)
                 # Save submission intent before sending. An interrupted HTTP response is
                 # ambiguous, so resume must never silently submit a second GPU task.
                 if manifest.get("submission_started"):
@@ -298,7 +309,11 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
             write_json(job / "comfy-history.json", history)
             if history.get("status", {}).get("status_str") == "error":
                 raise RuntimeError("ComfyUI 生成失败，详细错误已保存到 comfy-history.json。")
-            images = [im for out in history.get("outputs", {}).values() for im in out.get("images", []) if im.get("type") == "output"]
+            outputs = history.get('outputs', {})
+            if manifest.get('render_mode') in ('generate_edit', 'edit_only') and '11' not in outputs:
+                raise RuntimeError('Qwen 未返回修改稿，请检查模型与 comfy-history.json；不会用原稿冒充修改结果。')
+            selected_outputs = [outputs['11']] if '11' in outputs else outputs.values()
+            images = [im for out in selected_outputs for im in out.get("images", []) if im.get("type") == "output"]
             if not images:raise RuntimeError("ComfyUI 没有返回可保存的图片。")
             params=urllib.parse.urlencode({k:images[0].get(k, "") for k in ("filename", "subfolder", "type")})
             with urllib.request.urlopen(COMFY+"/view?"+params, timeout=60) as r:
@@ -306,6 +321,12 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
             temp=job / "raw.download"
             temp.write_bytes(raw)
             with Image.open(temp) as image:image.verify()
+            originals = outputs.get('moss_reference', {}).get('images', [])
+            if originals:
+                params = urllib.parse.urlencode({k: originals[0].get(k, '') for k in ('filename', 'subfolder', 'type')})
+                with urllib.request.urlopen(COMFY+'/view?'+params, timeout=60) as response:
+                    original = response.read()
+                (job/'moss.png').write_bytes(original)
             temp.replace(job / "raw.png")
         cancel.check(c, prompt_id)
         stage("composing", "画面已生成，正在保存漫画页…" if manifest.get('text_mode') == 'model'

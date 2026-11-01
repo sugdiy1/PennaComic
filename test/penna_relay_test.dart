@@ -51,6 +51,45 @@ class EmptyPreviewService extends ComicExportService {
 }
 
 void main() {
+  testWidgets('接力可选择 MOSS 生成后修改并原样提交修改要求', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fake = FakeRelay();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            snapshot: {
+              'title': 'edit test',
+              'width': 832,
+              'height': 1216,
+              'source': {},
+              'layout': {},
+            },
+            service: fake,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('relay-render-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MOSS 生成后由 Qwen 修改').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('relay-edit-prompt')),
+      '只修左手，保留全部台词。',
+    );
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect((fake.captured!['settings'] as Map)['render_mode'], 'generate_edit');
+    expect((fake.captured!['settings'] as Map)['edit_prompt'], '只修左手，保留全部台词。');
+    fake.events.add(const RelayEvent(stage: 'error', message: 'test finished'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+  });
   testWidgets('终止按钮写入当前任务标记并等待后端停止，重试使用新标记', (tester) async {
     final dir = Directory.systemTemp.createTempSync('penna-ui-cancel-');
     final previous = IntegrationSettings.current;

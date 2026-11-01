@@ -41,6 +41,8 @@ def prepare_batch(request, root=None):
     if not isinstance(request, dict) or not isinstance(request.get("pages"), list) or not request["pages"]:
         raise ValueError("批次需要至少一页有效快照。")
     settings = request.get("settings", {})
+    if isinstance(settings, dict) and settings.get('render_mode') == 'edit_only':
+        raise ValueError('修改已有图片请使用当前单页；批量可选择 MOSS 生成后修改。')
     if not isinstance(settings, dict) or not isinstance(request.get("skip_completed", True), bool):
         raise ValueError("批次设置或 skip_completed 无效。")
     base_seed = int(settings.get("seed", request["pages"][0].get("settings", {}).get("seed", 42)))
@@ -52,6 +54,8 @@ def prepare_batch(request, root=None):
             raise ValueError("批次中的页面必须为快照对象。")
         snapshot = copy.deepcopy(original)
         snapshot["settings"] = {**snapshot.get("settings", {}), **settings, "seed": base_seed + index}
+        if snapshot['settings'].get('render_mode') == 'edit_only':
+            raise ValueError('修改已有图片请使用当前单页。')
         if not isinstance(snapshot.get("context", {}), dict):
             raise ValueError("页面 context 必须为对象。")
         snapshots.append(snapshot)
@@ -104,7 +108,7 @@ def load_batch(batch_dir):
         if batch_dir not in job.parents or job in seen or page.get("number") != index:
             raise ValueError("页面任务路径或页序不属于指定批次。")
         seen.add(job)
-        for filename in ("snapshot.json", "page.json", "workflow.json", "manifest.json", "raw.png", "page.png"):
+        for filename in ("snapshot.json", "page.json", "workflow.json", "manifest.json", "raw.png", "page.png", "reference.png", "moss.png"):
             if job not in (job / filename).resolve().parents:
                 raise ValueError("页面文件不能指向批次目录以外。")
         snapshot = read_json(job / "snapshot.json")

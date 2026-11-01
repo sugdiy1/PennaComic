@@ -52,6 +52,13 @@ class PennaRelayDialog extends StatefulWidget {
 class _PennaRelayDialogState extends State<PennaRelayDialog> {
   final _steps = TextEditingController(text: '50');
   final _seed = TextEditingController(text: '42');
+  final _editSteps = TextEditingController(text: '25');
+  final _editPrompt = TextEditingController(
+    text:
+        '只修正漫画中不自然的手指、手臂连接和肢体遮挡。保留人物身份、服装、动作、分格、气泡位置及全部原有中文台词，不增删或改写文字，保持原画风。',
+  );
+  final _reference = TextEditingController();
+  String _renderMode = 'generate';
   List<String> _loras = [];
   Set<String> _selected = {'moss_Lineart.safetensors'};
   final _weights = <String, String>{};
@@ -130,6 +137,22 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
           }
           if (prefs['steps'] is int) _steps.text = '${prefs['steps']}';
           if (prefs['seed'] is int) _seed.text = '${prefs['seed']}';
+          if ([
+            'generate',
+            'generate_edit',
+            'edit_only',
+          ].contains(prefs['render_mode'])) {
+            _renderMode = prefs['render_mode'] as String;
+          }
+          if (prefs['edit_prompt'] is String) {
+            _editPrompt.text = prefs['edit_prompt'] as String;
+          }
+          if (prefs['edit_steps'] is int) {
+            _editSteps.text = '${prefs['edit_steps']}';
+          }
+          if (prefs['reference_image'] is String) {
+            _reference.text = prefs['reference_image'] as String;
+          }
           _loadedPreferences = true;
         }
       });
@@ -144,12 +167,28 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
   void dispose() {
     _steps.dispose();
     _seed.dispose();
+    _editSteps.dispose();
+    _editPrompt.dispose();
+    _reference.dispose();
     super.dispose();
   }
 
   Future<void> _start() async {
     if (_busy) return;
-    final steps = int.tryParse(_steps.text), seed = int.tryParse(_seed.text);
+    if (_renderMode != 'generate' &&
+        (_editPrompt.text.trim().isEmpty ||
+            _editPrompt.text.length > 12000 ||
+            (int.tryParse(_editSteps.text) ?? 0) < 1 ||
+            (int.tryParse(_editSteps.text) ?? 101) > 100 ||
+            (_renderMode == 'edit_only' && _reference.text.trim().isEmpty))) {
+      setState(() {
+        _stage = 'error';
+        _message = '请填写修改要求、1–100 的修改步数；修改已有图片时请选择参考 PNG。';
+      });
+      return;
+    }
+    final steps = _renderMode == 'edit_only' ? 50 : int.tryParse(_steps.text);
+    final seed = int.tryParse(_seed.text);
     if (_loadingLoras || _loraError != null) return;
     if (steps == null ||
         steps < 1 ||
@@ -164,7 +203,9 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
       return;
     }
     final selected = <Map<String, Object>>[];
-    for (final name in _loras.where(_selected.contains)) {
+    for (final name in _loras.where(
+      (name) => _renderMode != 'edit_only' && _selected.contains(name),
+    )) {
       final weight = double.tryParse(_weights[name] ?? '0.85');
       if (weight == null || !weight.isFinite || weight < 0 || weight > 2) {
         setState(() {
@@ -180,6 +221,10 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
       'seed': seed,
       'loras': selected,
       'cfg': 3,
+      'render_mode': _renderMode,
+      'edit_prompt': _editPrompt.text,
+      'edit_steps': int.tryParse(_editSteps.text) ?? 25,
+      if (_renderMode == 'edit_only') 'reference_image': _reference.text.trim(),
     };
     final chosen = _pages
         .where(
@@ -465,7 +510,7 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
                         ),
                       ],
                       selected: {_multi},
-                      onSelectionChanged: _busy
+                      onSelectionChanged: _busy || _renderMode == 'edit_only'
                           ? null
                           : (v) => setState(() => _multi = v.single),
                     ),
@@ -502,6 +547,84 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
                                 ),
                               ),
                               const SizedBox(height: 18),
+                              InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: '出图模式',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    key: const ValueKey('relay-render-mode'),
+                                    value: _renderMode,
+                                    isExpanded: true,
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'generate',
+                                        child: Text('MOSS 生成'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'generate_edit',
+                                        child: Text('MOSS 生成后由 Qwen 修改'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'edit_only',
+                                        child: Text('只修改已有图片（Qwen）'),
+                                      ),
+                                    ],
+                                    onChanged: _busy
+                                        ? null
+                                        : (value) => setState(() {
+                                            _renderMode = value!;
+                                            if (_renderMode == 'edit_only') {
+                                              _multi = false;
+                                            }
+                                          }),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              if (_renderMode != 'generate') ...[
+                                TextField(
+                                  key: const ValueKey('relay-edit-prompt'),
+                                  controller: _editPrompt,
+                                  enabled: !_busy,
+                                  minLines: 3,
+                                  maxLines: 5,
+                                  decoration: const InputDecoration(
+                                    labelText: '修改要求',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                if (_renderMode == 'generate_edit')
+                                  _field('修改步数', _editSteps, numeric: true),
+                                if (_renderMode == 'edit_only') ...[
+                                  _field('参考 PNG 路径（尺寸须与当前画布一致）', _reference),
+                                  OutlinedButton.icon(
+                                    onPressed: _busy
+                                        ? null
+                                        : () async {
+                                            final image = await widget
+                                                .previewService
+                                                .pickImage();
+                                            if (image != null && mounted) {
+                                              setState(
+                                                () => _reference.text = image,
+                                              );
+                                            }
+                                          },
+                                    icon: const Icon(Icons.image_outlined),
+                                    label: const Text('选择漫画 PNG'),
+                                  ),
+                                ],
+                                const Text(
+                                  '原稿与修改稿分别保存；模型可能改字，请对照检查。',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                const SizedBox(height: 18),
+                              ],
                               if (_multi) ...[
                                 Row(
                                   children: [
@@ -580,30 +703,35 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
                                   '${widget.snapshot['unavailable']}',
                                   style: TextStyle(color: PennaColors.amber),
                                 ),
-                              RelayLoraPicker(
-                                names: _loras,
-                                selected: _selected,
-                                weights: _weights,
-                                busy: _busy,
-                                loading: _loadingLoras,
-                                error: _loraError,
-                                onSelect: (name, on) => setState(
-                                  () => on
-                                      ? _selected.add(name)
-                                      : _selected.remove(name),
+                              if (_renderMode != 'edit_only')
+                                RelayLoraPicker(
+                                  names: _loras,
+                                  selected: _selected,
+                                  weights: _weights,
+                                  busy: _busy,
+                                  loading: _loadingLoras,
+                                  error: _loraError,
+                                  onSelect: (name, on) => setState(
+                                    () => on
+                                        ? _selected.add(name)
+                                        : _selected.remove(name),
+                                  ),
+                                  onWeight: (name, value) =>
+                                      _weights[name] = value,
+                                  onRefresh: _loadLoras,
+                                  onClear: () => setState(() => _selected = {}),
                                 ),
-                                onWeight: (name, value) =>
-                                    _weights[name] = value,
-                                onRefresh: _loadLoras,
-                                onClear: () => setState(() => _selected = {}),
-                              ),
                               const SizedBox(height: 18),
                               Row(
                                 children: [
                                   Expanded(
                                     child: _field(
-                                      '采样步数',
-                                      _steps,
+                                      _renderMode == 'edit_only'
+                                          ? '修改步数'
+                                          : '采样步数',
+                                      _renderMode == 'edit_only'
+                                          ? _editSteps
+                                          : _steps,
                                       numeric: true,
                                     ),
                                   ),

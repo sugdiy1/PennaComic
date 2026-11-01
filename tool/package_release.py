@@ -75,7 +75,7 @@ def main():
         release = args.release_dir
         if not release or not (release / 'penna.exe').is_file() or not (release / 'data/app.so').is_file():
             p.error('Provide a complete fresh Flutter release directory')
-        files = [(f, n) for f, n in files if n.split('/')[0] in {'backend', 'workflows', 'font'} or n in {'README.md', 'NOTICE.md', 'LICENSE', 'integration.example.json', 'docs/VALIDATION.md', 'docs/DSH-MCP.md'}]
+        files = [(f, n) for f, n in files if n.split('/')[0] in {'backend', 'workflows', 'font'} or n in {'README.md', 'NOTICE.md', 'LICENSE', 'integration.example.json', 'docs/VALIDATION.md', 'docs/DSH-MCP.md', 'docs/MOSS-QWEN.md'}]
         files = [(f, n) for f, n in files if not n.startswith('backend/test_')]
         for f in release.rglob('*'):
             if f.is_file() and not f.is_symlink():
