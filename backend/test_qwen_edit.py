@@ -22,7 +22,7 @@ class QwenEditTests(unittest.TestCase):
             self.assertEqual(graph['moss_reference']['inputs']['images'], ['9', 0])
             self.assertEqual(graph['qwen_clip']['inputs']['type'], 'qwen_image')
             self.assertEqual(graph['qwen_encode']['inputs']['prompt'], '只修改左上格的手，保留台词。')
-            self.assertEqual(json.loads((job/'manifest.json').read_text())['render_mode'], 'generate_edit')
+            self.assertEqual(json.loads((job/'manifest.json').read_text(encoding='utf-8'))['render_mode'], 'generate_edit')
 
     def test_edit_only_saves_immutable_input_and_has_no_moss_sampler(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -54,7 +54,7 @@ class QwenEditTests(unittest.TestCase):
         from test_penna_batch import FakeController
         with tempfile.TemporaryDirectory() as folder:
             value=snapshot();value['settings']['render_mode']='generate_edit'
-            job=relay.prepare(value,Path(folder));manifest=json.loads((job/'manifest.json').read_text())
+            job=relay.prepare(value,Path(folder));manifest=json.loads((job/'manifest.json').read_text(encoding='utf-8'))
             manifest['prompt_id']='finished';relay.write_json(job/'manifest.json',manifest)
             history={'status':{'status_str':'success'},'outputs':{
                 'moss_reference':{'images':[{'filename':'original.png','type':'output'}]},
@@ -75,7 +75,7 @@ class QwenEditTests(unittest.TestCase):
         from test_penna_batch import FakeController
         with tempfile.TemporaryDirectory() as folder:
             value=snapshot();value['settings']['render_mode']='generate_edit'
-            job=relay.prepare(value,Path(folder));manifest=json.loads((job/'manifest.json').read_text())
+            job=relay.prepare(value,Path(folder));manifest=json.loads((job/'manifest.json').read_text(encoding='utf-8'))
             manifest['prompt_id']='partial';relay.write_json(job/'manifest.json',manifest)
             controller=FakeController(histories={'partial':{'status':{'status_str':'success'},'outputs':{
                 'moss_reference':{'images':[{'filename':'original.png','type':'output'}]}}}})
