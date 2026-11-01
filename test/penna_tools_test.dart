@@ -157,8 +157,18 @@ void main() {
       final job = await api.call('penna_submit_render', {
         'series': 0,
         'page_numbers': [p['page_number']],
+        'settings': {
+          'render_mode': 'generate_edit',
+          'edit_prompt': '只修手部，保留文字。',
+          'edit_steps': 25,
+        },
       });
       await pumpEventQueue();
+      expect(
+        (relay.request!['settings'] as Map)['render_mode'],
+        'generate_edit',
+      );
+      expect((relay.request!['settings'] as Map)['edit_prompt'], '只修手部，保留文字。');
       expect(
         relay.cancellation,
         '${dir.absolute.path}/control/cancel/${job['task_id']}.json',

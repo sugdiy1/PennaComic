@@ -38,3 +38,7 @@ ComfyUI 需要原生 `TextEncodeQwenImage21`、`QwenImage21Cache` 节点。Qwen 
 ## 来源
 
 PennaComic 是基于 Penna 的衍生项目，原项目来源和许可证见 README、NOTICE 和 LICENSE。Qwen 接入使用 ComfyUI 原生参考图编辑节点，参数参考 [官方 Qwen 2.1 编辑模板](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_image_edit.json)。模型文件来自 [第三方量化仓库](https://huggingface.co/abenzerps/Qwen-Image-2.1-Uncensored-Quantized)，其名称不构成质量保证；模型各自许可证单独适用。
+
+## DSH / MCP 调用
+
+`penna_submit_render` 的 settings 增加 `render_mode: "generate_edit"`、`edit_prompt`、`edit_steps`。省略 render_mode 沿用 MOSS 生成。单页或多页均可；本接口不接收外部图片路径，已有图片修改请使用软件单页面板。

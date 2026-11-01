@@ -394,9 +394,34 @@ class PennaTools {
       if (value is Map) ...Map<String, Object?>.from(value),
     };
     if (s.keys.any(
-      (k) => !['steps', 'seed', 'cfg', 'bubble', 'loras'].contains(k),
+      (k) => ![
+        'steps',
+        'seed',
+        'cfg',
+        'bubble',
+        'loras',
+        'render_mode',
+        'edit_prompt',
+        'edit_steps',
+      ].contains(k),
     )) {
       _bad('未知出图设置');
+    }
+    if (s.containsKey('render_mode') &&
+        !['generate', 'generate_edit'].contains(s['render_mode'])) {
+      _bad('MCP 支持 generate 或 generate_edit；已有图片修改请使用软件的当前单页面板');
+    }
+    if (s.containsKey('edit_prompt') &&
+        (s['edit_prompt'] is! String ||
+            (s['edit_prompt'] as String).trim().isEmpty ||
+            (s['edit_prompt'] as String).length > 12000)) {
+      _bad('修改要求应为 1–12000 字');
+    }
+    if (s.containsKey('edit_steps') &&
+        (s['edit_steps'] is! int ||
+            (s['edit_steps'] as int) < 1 ||
+            (s['edit_steps'] as int) > 100)) {
+      _bad('修改步数应为 1–100');
     }
     final steps = s['steps'],
         seed = s['seed'],

@@ -136,6 +136,11 @@ List<Map<String, Object?>> pennaToolSchema() => [
           'steps': {'type': 'integer', 'minimum': 1, 'maximum': 100},
           'seed': {'type': 'integer', 'minimum': 0},
           'cfg': {'type': 'number', 'minimum': 0, 'maximum': 20},
+          'render_mode': {
+            'enum': ['generate', 'generate_edit'],
+          },
+          'edit_prompt': {'type': 'string', 'minLength': 1, 'maxLength': 12000},
+          'edit_steps': {'type': 'integer', 'minimum': 1, 'maximum': 100},
           'loras': {
             'type': 'array',
             'items': {
