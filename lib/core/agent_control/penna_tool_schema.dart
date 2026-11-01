@@ -56,7 +56,10 @@ const _layout = {
             'enum': ['object', 'character', 'text'],
           },
           'caption': _string,
-          'text': _string,
+          'text': {
+            'type': 'string',
+            'description': '画面中需要出现的文字或台词，由 MOSS 模型直接生成在画面中；请填写准确原文。',
+          },
           'name': _string,
           'shape': _shape,
           'layer': {
@@ -133,9 +136,6 @@ List<Map<String, Object?>> pennaToolSchema() => [
           'steps': {'type': 'integer', 'minimum': 1, 'maximum': 100},
           'seed': {'type': 'integer', 'minimum': 0},
           'cfg': {'type': 'number', 'minimum': 0, 'maximum': 20},
-          'bubble': {
-            'enum': ['oval', 'cloud', 'spiky'],
-          },
           'loras': {
             'type': 'array',
             'items': {

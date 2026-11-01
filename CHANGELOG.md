@@ -1,3 +1,9 @@
+# 1.1.0-comic.5 (candidate)
+
+- New relay jobs send dialogue and text regions directly to MOSS; no programmatic lettering or text suppression.
+- Removed the bubble-style selector. Added a cooperative stop button in the render panel.
+- Legacy saved jobs retain their original composition behavior for resume compatibility.
+
 # 1.1.0-comic.4 (candidate)
 
 - Desktop --home now selects the actual data directory, ahead of PENNA_HOME and APPDATA defaults.

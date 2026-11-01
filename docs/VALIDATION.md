@@ -77,3 +77,7 @@ GitHub Actions运行 https://github.com/sugdiy1/PennaComic/actions/runs/41196775
 - penna_cancel_render通过专属标记停止后续提交/重试，只删除自有queued prompt并按prompt_id中断自有running prompt；本机ComfyUI已只读核对支持定向interrupt，不改内核。
 - 修复在提交前取消导致意图标记残留、无法续跑的问题；网络提交结果未知时仍保留防重复机制。
 - 明确主成稿workspace.json与分镜layout_chat.json分离，layout.json载入后已有分镜页优先。没有据报告推断数据丢失或覆盖现存用户作品。
+
+## 1.1.0-comic.5 模型文本与终止按钮
+
+新任务保留text节点、台词、描述及坐标，不再程序排字或追加文字负面限制。模型生成PNG按字节保存为成品；旧快照恢复保留原含义。按钮使用独立任务取消标记，等待cancelled确认后解除busy，不清空全局队列。针对原样文本传递、无字体/绘图调用、无损成品和UI取消/重试均有回归。

@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:penna/core/harness/comic/penna_relay_service.dart';
 import 'package:penna/core/harness/comic/comic_export_service.dart';
+import 'package:penna/core/integration_settings.dart';
 import 'package:penna/ui/features/layout/penna_relay_dialog.dart';
 
 class FakeRelay extends PennaRelayService {
-  final events = StreamController<RelayEvent>();
+  var events = StreamController<RelayEvent>();
   int calls = 0;
   Map<String, Object?>? captured;
+  String? cancelPath;
+  Completer<void>? restorePending;
   @override
   Stream<RelayEvent> run(
     Map<String, Object?> snapshot, {
@@ -18,18 +22,22 @@ class FakeRelay extends PennaRelayService {
   }) {
     calls++;
     captured = snapshot;
+    cancelPath = cancelFile;
     return events.stream;
   }
 
   @override
-  Future<void> restoreChat() async {}
+  Future<void> restoreChat() async {
+    await restorePending?.future;
+  }
+
   @override
   Future<List<String>> listLoras() async => [
     'moss_Lineart.safetensors',
     'muqiu_moss.safetensors',
   ];
   @override
-  Future<Map<String, dynamic>> readSettings() async => {};
+  Future<Map<String, dynamic>> readSettings() async => {'bubble': 'spiky'};
   @override
   Future<String?> findPendingBatch(Map<String, Object?> request) async => null;
 }
@@ -43,6 +51,87 @@ class EmptyPreviewService extends ComicExportService {
 }
 
 void main() {
+  testWidgets('终止按钮写入当前任务标记并等待后端停止，重试使用新标记', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('penna-ui-cancel-');
+    final previous = IntegrationSettings.current;
+    IntegrationSettings.current = IntegrationSettings(
+      home: dir.path,
+      bundleRoot: dir.path,
+    );
+    addTearDown(() {
+      IntegrationSettings.current = previous;
+      dir.deleteSync(recursive: true);
+    });
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fake = FakeRelay();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            snapshot: {
+              'title': 'cancel test',
+              'width': 832,
+              'height': 1216,
+              'source': {},
+              'layout': {},
+            },
+            service: fake,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect(fake.cancelPath, startsWith('${dir.path}/control/cancel/ui-relay-'));
+    final marker = File(fake.cancelPath!);
+    expect(marker.existsSync(), false);
+    // A failed marker write leaves cancellation enabled for a retry.
+    final blocker = Directory('${marker.path}.tmp')
+      ..createSync(recursive: true);
+    await tester.tap(find.text('终止任务'));
+    await tester.pump();
+    expect(find.textContaining('未能写入终止请求'), findsOneWidget);
+    blocker.deleteSync();
+    await tester.tap(find.text('终止任务'));
+    await tester.pump();
+    expect(marker.existsSync(), true);
+    expect(find.text('终止中…'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '关闭'))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '终止中…'))
+          .onPressed,
+      isNull,
+    );
+    fake.events.add(const RelayEvent(stage: 'cancelled', message: '任务已终止'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+    expect(find.text('终止中…'), findsNothing);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '关闭'))
+          .onPressed,
+      isNotNull,
+    );
+    expect(fake.calls, 1);
+    fake.events = StreamController<RelayEvent>();
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect(fake.cancelPath, isNot(marker.path));
+    expect(File(fake.cancelPath!).existsSync(), false);
+    fake.events.add(const RelayEvent(stage: 'done', message: 'new job done'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+  });
   testWidgets('接力结果进入成品预览也可重做选定页，关闭两层界面后回调', (tester) async {
     tester.view.physicalSize = const Size(1400, 1100);
     tester.view.devicePixelRatio = 1;
@@ -247,6 +336,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text('气泡样式'), findsNothing);
+    expect(find.textContaining('文字框里的台词由程序排版'), findsNothing);
+    expect(find.text('排入台词'), findsNothing);
+    expect(find.text('保存成品'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('lora-check-muqiu_moss.safetensors')),
     );
@@ -259,6 +352,7 @@ void main() {
     await tester.pump();
     expect(fake.calls, 1);
     expect(fake.captured!['title'], '茶凉以后');
+    expect(fake.captured!['settings'] as Map, isNot(contains('bubble')));
     expect((fake.captured!['settings'] as Map)['loras'], [
       {'name': 'moss_Lineart.safetensors', 'strength': .85},
       {'name': 'muqiu_moss.safetensors', 'strength': .3},
@@ -282,5 +376,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('ComfyUI 暂不可用'), findsOneWidget);
     expect(find.text('重试接力'), findsOneWidget);
+    fake.restorePending = Completer<void>();
+    await tester.tap(find.widgetWithText(TextButton, '恢复对话'));
+    await tester.pump();
+    expect(find.text('终止任务'), findsNothing);
+    expect(find.text('终止中…'), findsNothing);
+    fake.restorePending!.complete();
+    await tester.pumpAndSettle();
   });
 }

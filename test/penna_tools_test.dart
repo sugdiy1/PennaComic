@@ -532,6 +532,53 @@ void main() {
   test('unknown tool is explicit', () async {
     await expectLater(api.call('shell', {}), throwsA(isA<ControlException>()));
   });
+  test(
+    'legacy bubble is validated and ignored while MOSS text survives',
+    () async {
+      final textPage = drawing('with dialogue');
+      (textPage['boxes'] as List).add({
+        'box': [20, 600, 400, 800],
+        'label': 'text',
+        'text': '今天也要加油！',
+        'caption': 'handwritten dialogue',
+      });
+      final page = await api.call('penna_create_page', {
+        'series': 0,
+        'layout': textPage,
+      });
+      await expectLater(
+        api.call('penna_submit_render', {
+          'series': 0,
+          'page_numbers': [page['page_number']],
+          'settings': {'bubble': 'bad'},
+        }),
+        throwsA(isA<ControlException>()),
+      );
+      final fake = FakeRelay();
+      api = PennaTools(vm: vm, home: dir, relay: fake);
+      await api.call('penna_submit_render', {
+        'series': 0,
+        'page_numbers': [page['page_number']],
+        'settings': {'bubble': 'cloud'},
+      });
+      await pumpEventQueue();
+      expect(fake.request!['settings'] as Map, isNot(contains('bubble')));
+      final source =
+          ((fake.request!['pages'] as List).single as Map)['source'] as Map;
+      expect((source['boxes'] as List).last, containsPair('text', '今天也要加油！'));
+      final descriptor = api.tools.firstWhere(
+        (t) => t['name'] == 'penna_submit_render',
+      );
+      final settings =
+          (((descriptor['inputSchema'] as Map)['properties'] as Map)['settings']
+                  as Map)['properties']
+              as Map;
+      expect(settings, isNot(contains('bubble')));
+      fake.stream.add(const RelayEvent(stage: 'done', message: 'ok'));
+      await fake.stream.close();
+      await pumpEventQueue();
+    },
+  );
 }
 
 StudioViewModel _withPending(

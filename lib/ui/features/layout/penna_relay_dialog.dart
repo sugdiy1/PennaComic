@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/harness/comic/penna_relay_service.dart';
 import '../../../core/harness/comic/comic_export_service.dart';
+import '../../../core/integration_settings.dart';
 import '../../core/theme.dart';
 import '../../../l10n/l10n.dart';
 import 'relay_lora_picker.dart';
@@ -56,8 +57,10 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
   final _weights = <String, String>{};
   bool _loadingLoras = true, _loadedPreferences = false;
   String? _loraError, _lastSettings;
-  String _bubble = 'oval';
   bool _busy = false, _archived = false;
+  bool _renderActive = false;
+  bool _cancelRequested = false;
+  File? _cancelFile;
   String? _jobDir, _image;
   String? _batchDir;
   bool _multi = false;
@@ -74,7 +77,7 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
     ('saved', '保存分镜'),
     ('switching', '释放显存'),
     ('rendering', '生成画面'),
-    ('composing', '排入台词'),
+    ('composing', '保存成品'),
     ('restoring', '恢复对话'),
   ];
 
@@ -127,9 +130,6 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
           }
           if (prefs['steps'] is int) _steps.text = '${prefs['steps']}';
           if (prefs['seed'] is int) _seed.text = '${prefs['seed']}';
-          if (['oval', 'cloud', 'spiky'].contains(prefs['bubble'])) {
-            _bubble = prefs['bubble'] as String;
-          }
           _loadedPreferences = true;
         }
       });
@@ -180,7 +180,6 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
       'seed': seed,
       'loras': selected,
       'cfg': 3,
-      'bubble': _bubble,
     };
     final chosen = _pages
         .where(
@@ -221,6 +220,11 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
         : null;
     setState(() {
       _busy = true;
+      _renderActive = true;
+      _cancelRequested = false;
+      _cancelFile = File(
+        '${IntegrationSettings.current.home}/control/cancel/ui-relay-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
       _lastSettings = settingsKey;
       _jobDir = resume;
       _batchDir = _multi ? resume : null;
@@ -235,11 +239,24 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
       if (_multi && resume == null) {
         resume = await widget.service.findPendingBatch(snapshot);
       }
+      if (_cancelRequested) {
+        if (mounted) {
+          setState(() {
+            _stage = 'cancelled';
+            _message = '任务已终止，未继续提交页面。';
+          });
+        }
+        return;
+      }
       if (!_archived) {
         widget.onArchive?.call();
         _archived = true;
       }
-      await for (final event in widget.service.run(snapshot, resume: resume)) {
+      await for (final event in widget.service.run(
+        snapshot,
+        resume: resume,
+        cancelFile: _cancelFile!.path,
+      )) {
         if (!mounted) continue;
         setState(() {
           _stage = event.stage;
@@ -273,7 +290,34 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
         });
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _renderActive = false;
+        });
+      }
+    }
+  }
+
+  void _cancel() {
+    final marker = _cancelFile;
+    if (!_busy || !_renderActive || _cancelRequested || marker == null) return;
+    try {
+      marker.parent.createSync(recursive: true);
+      File('${marker.path}.tmp')
+        ..writeAsStringSync(
+          jsonEncode({
+            'cancel_requested_at': DateTime.now().toUtc().toIso8601String(),
+          }),
+          flush: true,
+        )
+        ..renameSync(marker.path);
+      setState(() {
+        _cancelRequested = true;
+        _message = '正在终止任务，请等待当前任务停止。';
+      });
+    } on FileSystemException catch (_) {
+      setState(() => _message = '未能写入终止请求，请检查数据目录后重试。');
     }
   }
 
@@ -569,40 +613,6 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
                                   ),
                                 ],
                               ),
-                              DropdownButtonFormField<String>(
-                                initialValue: _bubble,
-                                decoration: InputDecoration(
-                                  labelText: tr('气泡样式'),
-                                  isDense: true,
-                                  border: const OutlineInputBorder(),
-                                ),
-                                items: [
-                                  DropdownMenuItem(
-                                    value: 'oval',
-                                    child: Text(tr('椭圆')),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'cloud',
-                                    child: Text(tr('云朵')),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'spiky',
-                                    child: Text(tr('锯齿')),
-                                  ),
-                                ],
-                                onChanged: _busy
-                                    ? null
-                                    : (v) => setState(() => _bubble = v!),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                tr('文字框里的台词由程序排版。未填写台词的文字框不会生成气泡。'),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  height: 1.6,
-                                  color: PennaColors.slate500,
-                                ),
-                              ),
                               const SizedBox(height: 12),
                               Text(
                                 tr('生成期间请等待接力完成，再发送新的 Agent 消息或其他出图任务。'),
@@ -757,6 +767,11 @@ class _PennaRelayDialogState extends State<PennaRelayDialog> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (_busy && _renderActive)
+                      TextButton(
+                        onPressed: _cancelRequested ? null : _cancel,
+                        child: Text(_cancelRequested ? '终止中…' : '终止任务'),
+                      ),
                     if (_image != null && !_busy)
                       TextButton.icon(
                         onPressed: _openFinishedPreview,

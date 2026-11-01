@@ -390,7 +390,6 @@ class PennaTools {
       'steps': 50,
       'seed': 42,
       'cfg': 3,
-      'bubble': 'oval',
       'loras': [],
       if (value is Map) ...Map<String, Object?>.from(value),
     };
@@ -413,7 +412,8 @@ class PennaTools {
         !cfg.isFinite ||
         cfg < 0 ||
         cfg > 20 ||
-        !['oval', 'cloud', 'spiky'].contains(s['bubble'])) {
+        (s.containsKey('bubble') &&
+            !['oval', 'cloud', 'spiky'].contains(s['bubble']))) {
       _bad('出图参数范围不正确');
     }
     if (loras is! List || loras.length > 30) _bad('loras 必须是列表，最多30项');
@@ -430,6 +430,9 @@ class PennaTools {
         _bad('LoRA 强度必须为0–2且名称不能重复');
       }
     }
+    s.remove(
+      'bubble',
+    ); // Accept old clients without requesting program lettering.
     return s;
   }
 

@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import re
+import shutil
 import time
 import urllib.parse
 import urllib.request
@@ -72,43 +73,9 @@ def prepare(snapshot, root=OUTPUT):
         if weight:loras.append({'name':entry['name'],'strength':weight})
     lora=loras[0]['name'] if loras else ''
     strength=loras[0]['strength'] if loras else 0
-    dialogues = []
-    artwork = []
-    for item in layout["items"]:
-        if item.get("label") == "text":
-            text = str(item.get("text", "")).strip()
-            if text:
-                box = list(item.get("bbox", []))
-                if len(box) != 4 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in box):
-                    raise ValueError("气泡坐标无效，请检查文字框。")
-                if layout.get("bbox_format") == "yxyx":
-                    box = [box[1], box[0], box[3], box[2]]
-                if layout.get("bbox_coord_space") == "abs_centralized":
-                    box = [box[0]+width//2, box[1]+height//2, box[2]+width//2, box[3]+height//2]
-                box = [max(0, min(width if i % 2 == 0 else height, int(v))) for i, v in enumerate(box)]
-                if box[2]-box[0] < 20 or box[3]-box[1] < 20:
-                    raise ValueError("文字框太小，至少需要 20×20 像素。请在画布上放大文字框。")
-                dialogues.append({"text": text, "box": box, "kind": settings.get("bubble", "oval")})
-        else:
-            artwork.append(item)
-    if not artwork and not str(layout["summary"].get("caption", "")).strip():
+    # MOSS owns lettering and bubble placement. Keep the supplied layout exact.
+    if not layout["items"] and not str(layout["summary"].get("caption", "")).strip():
         raise ValueError("请先在画布中写好画面描述。")
-    layout["items"] = artwork
-    # Agent 也可能把台词重复写入整体描述或人物 caption；仅删除文字节点还不够。
-    def without_dialogue(value):
-        if isinstance(value, dict): return {k:without_dialogue(v) for k,v in value.items()}
-        if isinstance(value, list): return [without_dialogue(v) for v in value]
-        if isinstance(value, str):
-            for dialogue in dialogues:
-                value=value.replace(dialogue['text'], '')
-            # 去掉原稿里“气泡盖住肩膀”等绘画指令，避免模型额外画出第二个空气泡。
-            value=re.sub(r'\b(?:a|an|the)\s+(?:\w+\s+){0,4}(?:speech\s+bubble|speech\s+balloon)[^.;\n]*(?:[.;]|$)', '', value, flags=re.I)
-            value=re.sub(r'\bDialogue(?:,\s*in\s+order)?\s*:\s*[\\"“”\s]*', '', value, flags=re.I)
-            return value
-        return value
-    layout=without_dialogue(layout)
-    layout["summary"]["caption"] = (str(layout["summary"].get("caption", "")) +
-        "\nArtwork only. No text, no lettering, no speech bubbles. All dialogue is added separately by software.")
     prompt = json.dumps(layout, ensure_ascii=False)
     params = {"prompt": prompt, "width": width, "height": height, "seed": seed,
               "steps": steps, "cfg": cfg, "lora_name": lora, "lora_strength": strength, "shift": 5}
@@ -163,16 +130,16 @@ def prepare(snapshot, root=OUTPUT):
     job = root / job_id
     job.mkdir(parents=True, exist_ok=False)
     workflow["11"]["inputs"]["filename_prefix"] = f"moss/penna-relay/{job_id}"
-    workflow["6"]["inputs"]["text"] = "text, lettering, speech bubble, watermark, caption, subtitles"
+    workflow["6"]["inputs"]["text"] = "watermark"
     source = snapshot.get("source", snapshot["layout"])
     page = {"title": snapshot.get("title", "当前分镜"), "width": width, "height": height,
             "source": source, "source_hash": content_hash(source),
             "context": snapshot.get("context", {}), "original_layout": snapshot["layout"],
-            "settings": params | {"loras":loras,"bubble":settings.get('bubble','oval')}, "dialogues": dialogues}
+            "settings": params | {"loras":loras}, "text_mode": "model", "dialogues": []}
     write_json(job / "snapshot.json", snapshot)
     write_json(job / "page.json", page)
     write_json(job / "workflow.json", workflow)
-    write_json(job / "manifest.json", {"status": "saved", "job_id": job_id, "seed": seed,
+    write_json(job / "manifest.json", {"status": "saved", "text_mode": "model", "job_id": job_id, "seed": seed,
         "lora": lora, "lora_strength": strength, "loras":loras, "steps": steps, "prompt": prompt,
         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "started_at": time.time(),
         "source_hash": page["source_hash"], "context": page["context"], "snapshot_hash": content_hash(snapshot)})
@@ -181,6 +148,19 @@ def prepare(snapshot, root=OUTPUT):
 
 def compose(job):
     page = json.loads((job / "page.json").read_text(encoding="utf-8"))
+    if page.get("text_mode") == "model":
+        with Image.open(job / "raw.png") as image:
+            if image.size != (page["width"], page["height"]):
+                raise ValueError("生成图片尺寸与已保存的分镜不符。")
+        path = job / "page.png"
+        temporary = path.with_suffix(".png.tmp")
+        try:
+            shutil.copyfile(job / "raw.png", temporary)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return path
+    # Saved jobs without text_mode retain their original software lettering.
     image = Image.open(job / "raw.png").convert("RGB")
     if image.size != (page["width"], page["height"]):
         raise ValueError("生成图片尺寸与已保存的分镜不符。")
@@ -328,7 +308,8 @@ def run(job, controller=None, timeout=1800, manage_gpu=True, event_callback=None
             with Image.open(temp) as image:image.verify()
             temp.replace(job / "raw.png")
         cancel.check(c, prompt_id)
-        stage("composing", "画面已生成，正在排入台词气泡…")
+        stage("composing", "画面已生成，正在保存漫画页…" if manifest.get('text_mode') == 'model'
+              else "画面已生成，正在排入台词气泡…")
         path=compose(job)
         if manage_gpu:
             stage("restoring", "漫画页已保存，正在恢复对话模型…", image=str(path))

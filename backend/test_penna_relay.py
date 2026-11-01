@@ -18,10 +18,18 @@ def snapshot():
 
 
 class RelayTests(unittest.TestCase):
+    def legacy_job(self, folder):
+        job = penna_relay.prepare(snapshot(), Path(folder))
+        page = json.loads((job / 'page.json').read_text(encoding='utf-8'))
+        page.pop('text_mode', None)
+        page['dialogues'] = [{'text': '你终于来了。', 'box': [316, 108, 516, 208], 'kind': 'oval'}]
+        penna_relay.write_json(job / 'page.json', page)
+        return job
+
     def test_program_bubbles_use_bundled_chinese_font_on_non_chinese_windows(self):
         bundled = Path(penna_relay.__file__).resolve().parent.parent / 'font/LXGW975YuanSC-500W.ttf'
         with tempfile.TemporaryDirectory() as folder:
-            job = penna_relay.prepare(snapshot(), Path(folder))
+            job = self.legacy_job(folder)
             Image.new('RGB', (832, 1216), 'gray').save(job / 'raw.png')
             actual_loader = penna_relay.ImageFont.truetype
             used = []
@@ -35,7 +43,7 @@ class RelayTests(unittest.TestCase):
             self.assertTrue(result.is_file())
             self.assertTrue(used)
 
-    def test_template_compiles_typed_values_and_never_sends_dialogue_to_model(self):
+    def test_template_compiles_typed_values_and_sends_exact_layout_to_model(self):
         with tempfile.TemporaryDirectory() as folder:
             job = penna_relay.prepare(snapshot(), Path(folder))
             wf = json.loads((job / "workflow.json").read_text(encoding="utf-8"))
@@ -44,7 +52,14 @@ class RelayTests(unittest.TestCase):
             self.assertIsInstance(wf["8"]["inputs"]["seed"], int)
             self.assertEqual(wf["8"]["inputs"]["steps"], 4)
             self.assertEqual(wf["12"]["inputs"]["strength_model"], 0.85)
-            self.assertNotIn("你终于来了", wf["5"]["inputs"]["text"])
+            self.assertEqual(json.loads(wf['5']['inputs']['text']), snapshot()['layout'])
+            negative = wf['6']['inputs']['text'].lower()
+            for banned in ['text', 'lettering', 'speech bubble', 'caption', 'subtitles']:
+                self.assertNotIn(banned, negative)
+            page = json.loads((job / 'page.json').read_text(encoding='utf-8'))
+            self.assertEqual(page['text_mode'], 'model')
+            self.assertEqual(page['dialogues'], [])
+            self.assertNotIn('bubble', page['settings'])
             self.assertTrue((job / "page.json").is_file())
 
     def test_invalid_size_fails_before_creating_job(self):
@@ -54,18 +69,41 @@ class RelayTests(unittest.TestCase):
                 penna_relay.prepare(value, Path(folder))
             self.assertEqual(list(Path(folder).iterdir()), [])
 
-    def test_dialogue_repeated_in_summary_is_also_removed_from_model_prompt(self):
+    def test_dialogue_and_bubble_captions_are_preserved_everywhere(self):
         with tempfile.TemporaryDirectory() as folder:
             value=snapshot()
             value['layout']['summary']['caption']='Rainy station; a rounded speech bubble sits above her. Dialogue: "你终于来了。"'
             job=penna_relay.prepare(value,Path(folder))
             wf=json.loads((job/'workflow.json').read_text(encoding='utf-8'))
-            self.assertNotIn('你终于来了',wf['5']['inputs']['text'])
-            self.assertNotIn('a rounded speech bubble',wf['5']['inputs']['text'])
+            self.assertEqual(json.loads(wf['5']['inputs']['text']), value['layout'])
+
+    def test_model_lettering_publishes_raw_bytes_without_fonts_or_drawing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            job = penna_relay.prepare(snapshot(), Path(folder))
+            Image.new('RGBA', (832, 1216), (70, 80, 90, 100)).save(job / 'raw.png')
+            original = (job / 'raw.png').read_bytes()
+            metadata = (job / 'page.json').read_bytes()
+            with patch.object(penna_relay.ImageFont, 'truetype', side_effect=AssertionError('No fonts')), \
+                 patch.object(penna_relay.ImageDraw, 'Draw', side_effect=AssertionError('No drawing')):
+                result = penna_relay.compose(job)
+            self.assertEqual(result.read_bytes(), original)
+            self.assertEqual((job / 'page.json').read_bytes(), metadata)
+            self.assertFalse((job / 'page.png.tmp').exists())
+
+    def test_model_lettering_rejects_wrong_image_size_without_publishing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            job = penna_relay.prepare(snapshot(), Path(folder))
+            Image.new('RGB', (64, 64), 'gray').save(job / 'raw.png')
+            original = (job / 'raw.png').read_bytes()
+            with self.assertRaisesRegex(ValueError, '尺寸'):
+                penna_relay.compose(job)
+            self.assertFalse((job / 'page.png').exists())
+            self.assertFalse((job / 'page.png.tmp').exists())
+            self.assertEqual((job / 'raw.png').read_bytes(), original)
 
     def test_program_bubbles_keep_image_dimensions_and_record_text(self):
         with tempfile.TemporaryDirectory() as folder:
-            job = penna_relay.prepare(snapshot(), Path(folder))
+            job = self.legacy_job(folder)
             raw = Image.new("RGB", (832, 1216), "gray")
             raw.save(job / "raw.png")
             result = penna_relay.compose(job)
