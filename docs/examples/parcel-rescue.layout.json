@@ -1,0 +1,109 @@
+{
+  "width": 768,
+  "height": 1024,
+  "canvas": "multi_panel",
+  "style": "Full-color Japanese manga, crisp clean ink lines, detailed hands and clothing, expressive faces, clear readable Chinese lettering.",
+  "caption": "Three adult couriers save parcels at a station.",
+  "cast": {},
+  "boxes": [
+    {
+      "box": [
+        12,
+        12,
+        756,
+        496
+      ],
+      "name": "第1格",
+      "label": "object",
+      "layer": "back",
+      "caption": "Dramatic low-angle three-person action close-up: a woman age30 with a dark ponytail in a buttoned BLUE courier jacket, a man age35 with short black hair in an ORANGE work jacket, and a short brown-haired woman age40 in a GRAY station uniform lunge to catch falling cardboard boxes. All fully clothed adults. Blue courier reaches a large open hand toward the camera, orange man supports the lower parcel, gray woman steadies the upper parcel. Clear separate hands, believable arms, strong foreshortening, motion lines, flying papers. ONE SHOT ONLY."
+    },
+    {
+      "box": [
+        12,
+        520,
+        376,
+        1012
+      ],
+      "name": "第2格",
+      "label": "object",
+      "layer": "back",
+      "shape": [
+        [
+          0.16,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "caption": "Extreme close-up of three adult hands supporting one cardboard parcel corner. Only hands and wrists visible, no faces. BLUE sleeve from left, ORANGE sleeve from top, GRAY sleeve from right. Distinct fingers, realistic overlaps. One diagonal hand detail shot."
+    },
+    {
+      "box": [
+        400,
+        520,
+        756,
+        1012
+      ],
+      "name": "第3格",
+      "label": "object",
+      "layer": "back",
+      "shape": "ellipse",
+      "caption": "Tight group facial close-up of the SAME three clothed adult workers: dark ponytailed woman age30 in BLUE jacket in the foreground, short black-haired man age35 in ORANGE jacket behind left, short brown-haired woman age40 in GRAY uniform behind right. Relieved expressions after saving the boxes. Three clearly separate faces grouped at the CENTER of an oval composition, all faces fully visible away from the edges. ONE face close-up shot."
+    },
+    {
+      "box": [
+        40,
+        25,
+        180,
+        100
+      ],
+      "label": "text",
+      "caption": "White speech bubble, clear bold Chinese text.",
+      "text": "接住！"
+    },
+    {
+      "box": [
+        560,
+        25,
+        730,
+        100
+      ],
+      "label": "text",
+      "caption": "White speech bubble, clear bold Chinese text.",
+      "text": "小心台阶！"
+    },
+    {
+      "box": [
+        105,
+        660,
+        245,
+        740
+      ],
+      "label": "text",
+      "caption": "White speech bubble near the center, away from slanted edge.",
+      "text": "稳住！"
+    },
+    {
+      "box": [
+        500,
+        890,
+        650,
+        965
+      ],
+      "label": "text",
+      "caption": "Small white speech bubble inside the oval, clear Chinese text.",
+      "text": "好险。"
+    }
+  ]
+}

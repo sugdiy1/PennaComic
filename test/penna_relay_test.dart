@@ -1,0 +1,580 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:penna/core/harness/comic/penna_relay_service.dart';
+import 'package:penna/core/harness/comic/comic_export_service.dart';
+import 'package:penna/core/integration_settings.dart';
+import 'package:penna/ui/features/layout/penna_relay_dialog.dart';
+import 'package:penna/core/harness/comic/moss_workflow_defaults.dart';
+
+class FakeRelay extends PennaRelayService {
+  var events = StreamController<RelayEvent>();
+  int calls = 0;
+  Map<String, Object?>? captured;
+  String? cancelPath;
+  Map<String, dynamic>? savedSettings;
+  Map<String, dynamic>? workflowSettings;
+  @override
+  Future<Map<String, dynamic>> readWorkflowSettings(String path) async =>
+      workflowSettings ?? {'hash':'fake-workflow','defaults':<String,dynamic>{}};
+  Completer<void>? restorePending;
+  @override
+  Stream<RelayEvent> run(
+    Map<String, Object?> snapshot, {
+    String? resume,
+    String? cancelFile,
+  }) {
+    calls++;
+    captured = snapshot;
+    cancelPath = cancelFile;
+    return events.stream;
+  }
+
+  @override
+  Future<void> restoreChat() async {
+    await restorePending?.future;
+  }
+
+  @override
+  Future<List<String>> listLoras() async => [
+    'moss_Lineart.safetensors',
+    'muqiu_moss.safetensors',
+  ];
+  @override
+  Future<Map<String, dynamic>> readSettings() async =>
+      savedSettings ?? {'bubble': 'spiky'};
+  @override
+  Future<String?> findPendingBatch(Map<String, Object?> request) async => null;
+}
+
+class EmptyPreviewService extends ComicExportService {
+  const EmptyPreviewService();
+  @override
+  Future<List<List<ComicExportVersion>>> findPreviewVersions(
+    List<Map<String, Object?>> snapshots,
+  ) async => [for (final _ in snapshots) <ComicExportVersion>[]];
+}
+
+void main() {
+  testWidgets('同一路径工作流内容变化时刷新默认参数，不误用旧CFG', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final dir = Directory.systemTemp.createTempSync('workflow-refresh-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final graph =
+        jsonDecode(File('workflows/moss-api.json').readAsStringSync()) as Map;
+    graph['12']['inputs'].addAll({
+      'lora_name': 'muqiu_moss.safetensors',
+      'strength_model': .75,
+    });
+    graph['8']['inputs'].addAll({'steps': 12, 'cfg': 2, 'seed': 42});
+    final file = File('${dir.path}/workflow.json')
+      ..writeAsStringSync(jsonEncode(graph));
+    final fake = FakeRelay()
+      ..workflowSettings = {
+        'hash': 'current-file-hash',
+        'defaults': mossWorkflowDefaults(Map<String, dynamic>.from(graph)),
+      }
+      ..savedSettings = {
+        'workflow_path': file.path,
+        'workflow_sha256': 'outdated',
+        'steps': 50,
+        'cfg': 3,
+      };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            service: fake,
+            snapshot: {
+              'title': '工作流刷新',
+              'width': 768,
+              'height': 1024,
+              'layout': {},
+              'source': {},
+              'relay_defaults': {
+                'workflow_path': file.path,
+                'inherit_workflow': true,
+              },
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('relay-cfg')))
+          .controller!
+          .text,
+      '2',
+    );
+    expect(fake.calls, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets('逐格拼接只选择漫画格对象框，骰子仅指定一格重绘', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fake = FakeRelay();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            service: fake,
+            snapshot: {
+              'title': 'panel masks',
+              'width': 832,
+              'height': 1216,
+              'layout': {},
+              'source': {
+                'boxes': [
+                  {
+                    'name': '第1格',
+                    'label': 'object',
+                    'box': [0, 0, 832, 600],
+                    'caption': 'A full panel',
+                  },
+                  {
+                    'name': '第1格·人物',
+                    'label': 'character',
+                    'box': [20, 20, 300, 400],
+                    'caption': 'An adult',
+                  },
+                  {
+                    'name': '第1格·细节',
+                    'label': 'object',
+                    'box': [30, 30, 100, 100],
+                    'caption': 'An object',
+                  },
+                  {
+                    'name': '台词',
+                    'label': 'text',
+                    'box': [50, 50, 160, 100],
+                    'text': '接住。',
+                  },
+                ],
+              },
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('relay-render-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('逐格生成并蒙版拼接').last);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<CheckboxListTile>(find.byKey(const ValueKey('panel-mask-0')))
+          .value,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(find.byKey(const ValueKey('panel-mask-1')))
+          .value,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(find.byKey(const ValueKey('panel-mask-2')))
+          .value,
+      isFalse,
+    );
+    expect(find.byKey(const ValueKey('panel-mask-3')), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('panel-redo-0')));
+    await tester.tap(find.byKey(const ValueKey('panel-redo-0')));
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    final settings = fake.captured!['settings'] as Map;
+    expect(settings['render_mode'], 'panels');
+    expect(settings['panel_indices'], [0]);
+    expect((settings['panel_seeds'] as Map).keys, ['0']);
+    expect(settings['panel_edit'], isFalse);
+    fake.events.add(const RelayEvent(stage: 'error', message: 'test finished'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+  });
+  testWidgets('接力可选择 MOSS 生成后修改并原样提交修改要求', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fake = FakeRelay();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            snapshot: {
+              'title': 'edit test',
+              'width': 832,
+              'height': 1216,
+              'source': {},
+              'layout': {},
+            },
+            service: fake,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('relay-render-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MOSS 生成后由 Qwen 修改').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('relay-edit-prompt')),
+      '只修左手，保留全部台词。',
+    );
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect((fake.captured!['settings'] as Map)['render_mode'], 'generate_edit');
+    expect((fake.captured!['settings'] as Map)['edit_prompt'], '只修左手，保留全部台词。');
+    fake.events.add(const RelayEvent(stage: 'error', message: 'test finished'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+  });
+  testWidgets('终止按钮写入当前任务标记并等待后端停止，重试使用新标记', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('penna-ui-cancel-');
+    final previous = IntegrationSettings.current;
+    IntegrationSettings.current = IntegrationSettings(
+      home: dir.path,
+      bundleRoot: dir.path,
+    );
+    addTearDown(() {
+      IntegrationSettings.current = previous;
+      dir.deleteSync(recursive: true);
+    });
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fake = FakeRelay();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            snapshot: {
+              'title': 'cancel test',
+              'width': 832,
+              'height': 1216,
+              'source': {},
+              'layout': {},
+            },
+            service: fake,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect(fake.cancelPath, startsWith('${dir.path}/control/cancel/ui-relay-'));
+    final marker = File(fake.cancelPath!);
+    expect(marker.existsSync(), false);
+    // A failed marker write leaves cancellation enabled for a retry.
+    final blocker = Directory('${marker.path}.tmp')
+      ..createSync(recursive: true);
+    await tester.tap(find.text('终止任务'));
+    await tester.pump();
+    expect(find.textContaining('未能写入终止请求'), findsOneWidget);
+    blocker.deleteSync();
+    await tester.tap(find.text('终止任务'));
+    await tester.pump();
+    expect(marker.existsSync(), true);
+    expect(find.text('终止中…'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '关闭'))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '终止中…'))
+          .onPressed,
+      isNull,
+    );
+    fake.events.add(const RelayEvent(stage: 'cancelled', message: '任务已终止'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+    expect(find.text('终止中…'), findsNothing);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '关闭'))
+          .onPressed,
+      isNotNull,
+    );
+    expect(fake.calls, 1);
+    fake.events = StreamController<RelayEvent>();
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect(fake.cancelPath, isNot(marker.path));
+    expect(File(fake.cancelPath!).existsSync(), false);
+    fake.events.add(const RelayEvent(stage: 'done', message: 'new job done'));
+    await fake.events.close();
+    await tester.pumpAndSettle();
+  });
+  testWidgets('接力结果进入成品预览也可重做选定页，关闭两层界面后回调', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fake = FakeRelay();
+    int? rendered;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => PennaRelayDialog(
+                  snapshot: {
+                    'title': '测试第2页',
+                    'width': 832,
+                    'height': 1216,
+                    'source': {},
+                    'layout': {},
+                    'page_number': 2,
+                    'page_index': 9,
+                  },
+                  service: fake,
+                  previewService: const EmptyPreviewService(),
+                  onRenderPage: (i) => rendered = i,
+                ),
+              ),
+              child: const Text('打开接力'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开接力'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    fake.events.add(
+      const RelayEvent(
+        stage: 'done',
+        message: '完成',
+        image: 'missing-test-image.png',
+      ),
+    );
+    await fake.events.close();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('成品预览'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('finished-render')));
+    await tester.pumpAndSettle();
+    expect(rendered, 9);
+    expect(find.text('打开接力'), findsOneWidget);
+    expect(fake.calls, 1);
+  });
+  testWidgets('批量只提交勾选页，整批完成后可定位指定页修改', (tester) async {
+    final fake = FakeRelay();
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    int? edited;
+    final pages = [
+      for (var n = 1; n <= 3; n++)
+        <String, Object?>{
+          'title': '测试$n',
+          'page_number': n,
+          'page_index': n + 6,
+          'width': 832,
+          'height': 1216,
+          'source': {'page': n},
+          'layout': {},
+          'context': {'page_number': n},
+        },
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => PennaRelayDialog(
+                  snapshot: {
+                    ...pages.first,
+                    'series_pages': pages,
+                    'series_title': '测试系列',
+                  },
+                  service: fake,
+                  onEditPage: (i) => edited = i,
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('多页批量'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('relay-page-2')));
+    await tester.pump();
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect(fake.calls, 1);
+    expect((fake.captured!['pages'] as List).map((p) => p['page_number']), [
+      1,
+      3,
+    ]);
+    expect(
+      tester
+          .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
+          .onSelectionChanged,
+      isNull,
+    );
+    fake.events.add(
+      RelayEvent(
+        stage: 'page_done',
+        message: '第1页完成',
+        batchDir: 'batch',
+        pages: [
+          {
+            'number': 1,
+            'status': 'done',
+            'image': 'first.png',
+            'context': {'page_number': 1},
+          },
+          {
+            'number': 2,
+            'status': 'saved',
+            'context': {'page_number': 3},
+          },
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(find.text('正在接力…'), findsOneWidget);
+    fake.events.add(
+      RelayEvent(
+        stage: 'done',
+        message: '整批完成',
+        batchDir: 'batch',
+        pages: [
+          {
+            'number': 1,
+            'status': 'done',
+            'image': 'first.png',
+            'context': {'page_number': 1},
+          },
+          {
+            'number': 2,
+            'status': 'done',
+            'image': 'third.png',
+            'context': {'page_number': 3},
+          },
+        ],
+      ),
+    );
+    await fake.events.close();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('第 1 页 · 完成'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('修改此页分镜'));
+    await tester.pumpAndSettle();
+    expect(edited, 7);
+  });
+  test('逐行进度解析保留中文、任务目录和结果图', () {
+    final event = RelayEvent.fromJson({
+      'stage': 'done',
+      'message': '接力完成',
+      'job_dir': r'D:\MMD\茶凉以后',
+      'image': r'D:\MMD\茶凉以后\page.png',
+    });
+    expect(event.stage, 'done');
+    expect(event.message, '接力完成');
+    expect(event.image, endsWith('page.png'));
+  });
+
+  testWidgets('开始接力只提交一次，生成时禁用开始和关闭，参数来自当前页', (tester) async {
+    final fake = FakeRelay();
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PennaRelayDialog(
+            snapshot: {
+              'title': '茶凉以后',
+              'width': 832,
+              'height': 1216,
+              'layout': <String, Object?>{},
+              'source': <String, Object?>{},
+            },
+            service: fake,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('气泡样式'), findsNothing);
+    expect(find.textContaining('文字框里的台词由程序排版'), findsNothing);
+    expect(find.text('排入台词'), findsNothing);
+    expect(find.text('保存成品'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('relay-cfg')), '2');
+    await tester.tap(
+      find.byKey(const ValueKey('lora-check-muqiu_moss.safetensors')),
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('lora-weight-muqiu_moss.safetensors-null')),
+      '0.3',
+    );
+    await tester.tap(find.text('开始接力'));
+    await tester.pump();
+    expect(fake.calls, 1);
+    expect(fake.captured!['title'], '茶凉以后');
+    expect((fake.captured!['settings'] as Map)['cfg'], 2);
+    expect(fake.captured!['settings'] as Map, isNot(contains('bubble')));
+    expect((fake.captured!['settings'] as Map)['loras'], [
+      {'name': 'moss_Lineart.safetensors', 'strength': .85},
+      {'name': 'muqiu_moss.safetensors', 'strength': .3},
+    ]);
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '正在接力…'))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '关闭'))
+          .onPressed,
+      isNull,
+    );
+    fake.events.add(
+      RelayEvent.fromJson({'stage': 'error', 'message': 'ComfyUI 暂不可用'}),
+    );
+    await fake.events.close();
+    await tester.pumpAndSettle();
+    expect(find.text('ComfyUI 暂不可用'), findsOneWidget);
+    expect(find.text('重试接力'), findsOneWidget);
+    fake.restorePending = Completer<void>();
+    await tester.tap(find.widgetWithText(TextButton, '恢复对话'));
+    await tester.pump();
+    expect(find.text('终止任务'), findsNothing);
+    expect(find.text('终止中…'), findsNothing);
+    fake.restorePending!.complete();
+    await tester.pumpAndSettle();
+  });
+}

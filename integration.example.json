@@ -1,0 +1,7 @@
+{
+  "mode": "external",
+  "python": "C:/Python312/python.exe",
+  "comfy_url": "http://127.0.0.1:8188",
+  "llm_url": "http://127.0.0.1:8090",
+  "output": "renders"
+}
